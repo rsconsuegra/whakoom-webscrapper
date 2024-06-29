@@ -1,8 +1,7 @@
-""" Define here the models for your scraped items
+"""Define here the models for your scraped items
 
 See documentation in:
 https://docs.scrapy.org/en/latest/topics/items.html"""
-
 
 from dataclasses import dataclass
 
@@ -16,6 +15,7 @@ class Lists:
         url (str): The URL of the list.
         title (str): The title of the list.
     """
+
     url: str
     title: str
 
@@ -43,6 +43,7 @@ class PublicationsList(Lists):
     Inherits from:
         Lists: A dataclass for a list of items with a URL and a title.
     """
+
     id: int
 
 
@@ -65,6 +66,7 @@ class TitlesList:
     Returns:
         The value of the specified attribute.
     """
+
     url: str
     title: str
 

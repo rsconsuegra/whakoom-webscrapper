@@ -2,16 +2,19 @@ import scrapy
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
 
 class ShoComiSpider(scrapy.Spider):
-    name = 'sho_comi'
-    allowed_domains = ['whakoom.com']
-    start_urls = ['https://www.whakoom.com/deirdre/lists/titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039']
+    name = "sho_comi"
+    allowed_domains = ["whakoom.com"]
+    start_urls = [
+        "https://www.whakoom.com/deirdre/lists/titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039"
+    ]
 
     def __init__(self, *args, **kwargs):
-        super(ShoComiSpider, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
         chrome_options = Options()
         chrome_options.add_argument("--headless")  # Ensure GUI is off
         chrome_options.add_argument("--no-sandbox")
@@ -29,7 +32,7 @@ class ShoComiSpider(scrapy.Spider):
                     EC.element_to_be_clickable((By.ID, "loadmoreissues"))
                 )
                 load_more_button.click()
-                
+
                 # Wait for new content to load after clicking the button
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.CLASS_NAME, "list__item"))
@@ -46,12 +49,8 @@ class ShoComiSpider(scrapy.Spider):
         response = scrapy.Selector(text=page_source)
         titles = response.xpath('//span[@class="title"]/a')
         for title in titles:
-            link = title.xpath('@href').get()
-            title = title.xpath('text()').get()
-            
+            link = title.xpath("@href").get()
+            title = title.xpath("text()").get()
+
             # Yield the item
-            yield {
-                'title': title,
-                'href': link
-            }
-        
+            yield {"title": title, "href": link}

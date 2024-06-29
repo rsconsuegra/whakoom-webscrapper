@@ -54,3 +54,5 @@ python-env-tools/**
 databases
 *.csv
 venv
+.mypy_cache
+.ruff_cache

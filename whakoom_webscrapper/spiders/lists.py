@@ -1,4 +1,5 @@
 from scrapy import Spider
+
 from whakoom_webscrapper.items import PublicationsList
 
 
@@ -20,7 +21,9 @@ class ListSpider(Spider):
             following_a_tags = parent_div.xpath(".//a")
 
             if len(following_a_tags) > 1:  # Check if there are at least 2 <a> tags
-                list_title = following_a_tags[1].xpath("string()").extract_first().strip()
+                list_title = (
+                    following_a_tags[1].xpath("string()").extract_first().strip()
+                )
                 list_item = PublicationsList(
                     title=list_title,
                     url=following_a_tags[1].attrib["href"],

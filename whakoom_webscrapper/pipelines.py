@@ -6,11 +6,12 @@
 
 # useful for handling different item types with a single interface
 import sqlite3
-from scrapy.exceptions import DropItem
-from scrapy import Spider
-from .items import PublicationsList
 from pathlib import Path
 
+from scrapy import Spider
+from scrapy.exceptions import DropItem
+
+from .items import PublicationsList
 
 SPIDER_MAPS = {"lists": "list_of_publications"}
 

@@ -1,3 +1,5 @@
+"""This module contains the main entry point for the lists to gather."""
+
 from scrapy import Spider
 
 from whakoom_webscrapper.items import PublicationsList
@@ -21,10 +23,10 @@ class ListSpider(Spider):
             following_a_tags = parent_div.xpath(".//a")
 
             if len(following_a_tags) > 1:  # Check if there are at least 2 <a> tags
-                list_title = (
-                    following_a_tags[1].xpath("string()").extract_first().strip()
-                )
+                list_title = following_a_tags[1].xpath("string()").extract_first().strip()
+                self.logger.info("Found a list")
                 list_item = PublicationsList(
+                    id = following_a_tags[1].attrib["href"].rsplit('_', 1)[-1],
                     title=list_title,
                     url=following_a_tags[1].attrib["href"],
                 )

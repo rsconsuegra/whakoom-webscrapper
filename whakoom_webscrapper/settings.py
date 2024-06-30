@@ -1,12 +1,13 @@
-"""Scrapy settings for whakoom_webscrapper project
+"""
+Scrapy settings for whakoom_webscrapper project.
 
- For simplicity, this file contains only settings considered important or
- commonly used. You can find more settings consulting the documentation:
+For simplicity, this file contains only settings considered important or
+commonly used. You can find more settings consulting the documentation:
 
-     https://docs.scrapy.org/en/latest/topics/settings.html
-     https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-     https://docs.scrapy.org/en/latest/topics/spider-middleware.html"""
-
+https://docs.scrapy.org/en/latest/topics/settings.html
+https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
+https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+"""
 
 from copy import copy
 
@@ -40,25 +41,17 @@ def _get_handler_custom(*args, **kwargs):
 
 scrapy.utils.log._get_handler = _get_handler_custom
 
-DOWNLOADER_MIDDLEWARES = {
-    "scrapy_splash.SplashCookiesMiddleware": 723,
-    "scrapy_splash.SplashMiddleware": 725,
-    "scrapy.downloadermiddlewares.httpcompression.HttpCompressionMiddleware": 810,
-}
-
-SPIDER_MIDDLEWARES = {
-    "scrapy_splash.SplashDeduplicateArgsMiddleware": 100,
-}
-DUPEFILTER_CLASS = "scrapy_splash.SplashAwareDupeFilter"
-HTTPCACHE_STORAGE = "scrapy_splash.SplashAwareFSCacheStorage"
-
-SPLASH_URL = "http://localhost:8050"
+# DUPEFILTER_CLASS = "scrapy_splash.SplashAwareDupeFilter"
+# HTTPCACHE_STORAGE = "scrapy_splash.SplashAwareFSCacheStorage"
 
 BOT_NAME = "whakoom_webscrapper"
 
 SPIDER_MODULES = ["whakoom_webscrapper.spiders"]
 NEWSPIDER_MODULE = "whakoom_webscrapper.spiders"
 
+ITEM_PIPELINES = {
+   "whakoom_webscrapper.pipelines.WhakoomWebscrapperPipeline": 300,
+}
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 # USER_AGENT = "whakoom_webscrapper (+http://www.yourdomain.com)"

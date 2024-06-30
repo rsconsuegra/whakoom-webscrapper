@@ -1,1 +1,1 @@
-"""Scrapy API"""
+"""Scrapy API."""

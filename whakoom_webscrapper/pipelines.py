@@ -7,6 +7,7 @@
 # useful for handling different item types with a single interface
 import sqlite3
 from pathlib import Path
+import logging
 
 from scrapy import Spider
 from scrapy.exceptions import DropItem
@@ -32,15 +33,18 @@ class WhakoomWebscrapperPipeline:
         self.conn = sqlite3.connect(Path.cwd() / "databases" / "publications.db")
         self.c = self.conn.cursor()
         if spider.name in SPIDER_MAPS:
+            logging.info("Setting DB.")
             self.c.execute(
                 f"CREATE TABLE IF NOT EXISTS {SPIDER_MAPS[spider.name]} (id INTEGER NOT NULL, url TEXT NOT NULL, title TEXT)"
             )
 
     def close_spider(self, spider):
+        logging.info("Closing DB.")
         self.conn.commit()
         self.conn.close()
 
     def process_item(self, item, spider):
+        logging.info("Saving to DB")
         if isinstance(item, PublicationsList):
             self.c.execute(
                 f"INSERT INTO {SPIDER_MAPS[spider.name]} (id, url, title) VALUES (?, ?, ?)",

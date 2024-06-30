@@ -6,47 +6,67 @@ https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 useful for handling different item types with a single interface"""
 
 from scrapy import signals
+from scrapy.crawler import Crawler
 
 
 class WhakoomWebscrapperSpiderMiddleware:
-    # Not all methods need to be defined. If a method is not defined,
-    # scrapy acts as if the spider middleware does not modify the
-    # passed objects.
+    """Class for handling the webscrapping"""
 
     @classmethod
-    def from_crawler(cls, crawler):
-        # This method is used by Scrapy to create your spiders.
+    def from_crawler(cls, crawler: Crawler):
+        """
+        This method is used by Scrapy to create your spiders.
+
+        Args:
+            crawler (Crawler): The crawler instance that is creating the spider.
+
+        Returns:
+            cls: The instance of the spider middleware class.
+
+        Raises:
+            None
+
+        This method is called by Scrapy to create your spiders.
+        It is responsible for connecting the spider's signals to
+        the appropriate methods in the spider middleware class.
+        """
         s = cls()
         crawler.signals.connect(s.spider_opened, signal=signals.spider_opened)
         return s
 
     def process_spider_input(self, response, spider):
-        # Called for each response that goes through the spider
-        # middleware and into the spider.
+        """
+        Called for each response that goes through the spider middleware and into the spider.
 
-        # Should return None or raise an exception.
+        Args:
+            response (scrapy.http.Response): The response object returned by the web server.
+            spider (scrapy.crawler.Spider): The spider instance that is processing the response.
+
+        Returns:
+            None: The method does not modify the response or return any value.
+        """
         return None
 
     def process_spider_output(self, response, result, spider):
-        # Called with the results returned from the Spider, after
-        # it has processed the response.
+        """Called with the results returned from the Spider, after
+        it has processed the response.
 
-        # Must return an iterable of Request, or item objects.
+        Must return an iterable of Request, or item objects."""
         yield from result
 
     def process_spider_exception(self, response, exception, spider):
-        # Called when a spider or process_spider_input() method
-        # (from other spider middleware) raises an exception.
+        """Called when a spider or process_spider_input() method
+        (from other spider middleware) raises an exception.
 
-        # Should return either None or an iterable of Request or item objects.
-        pass
+        Should return either None or an iterable of Request or item objects."""
+        return None
 
     def process_start_requests(self, start_requests, spider):
-        # Called with the start requests of the spider, and works
-        # similarly to the process_spider_output() method, except
-        # that it doesn’t have a response associated.
+        """Called with the start requests of the spider, and works
+        similarly to the process_spider_output() method, except
+        that it doesn’t have a response associated.
 
-        # Must return only requests (not items).
+        Must return only requests (not items)."""
         yield from start_requests
 
     def spider_opened(self, spider):

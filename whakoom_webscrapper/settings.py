@@ -11,10 +11,16 @@ https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 
 from copy import copy
 from logging import Handler
+from pathlib import Path
 from typing import Any
 
 import scrapy.utils.log
 from colorlog import ColoredFormatter
+
+PROJECT_ROOT = Path(__file__).parent.parent
+DATABASE_DIR = PROJECT_ROOT / "databases"
+DATABASE_DIR.mkdir(exist_ok=True)
+DATABASE_PATH = DATABASE_DIR / "publications.db"
 
 color_formatter = ColoredFormatter(
     (

@@ -16,7 +16,7 @@ class ListSpider(Spider):
     allowed_domains = ["whakoom.com"]
     start_urls = ["https://www.whakoom.com/deirdre/lists"]
 
-    def parse(self, response: Response, **kwargs: str) -> Iterator[ListsItem]:
+    def parse(self, response: Response) -> Iterator[ListsItem]:
         """Parse the response from the scraped URL and extracts list items.
 
         Args:
@@ -43,9 +43,7 @@ class ListSpider(Spider):
             following_a_tags = parent_div.xpath(".//a")
 
             if len(following_a_tags) > 1:
-                list_title = (
-                    following_a_tags[1].xpath("string()").extract_first().strip()
-                )
+                list_title = following_a_tags[1].xpath("string()").extract_first().strip()
                 list_id = int(following_a_tags[1].attrib["href"].rsplit("_", 1)[-1])
 
                 yield ListsItem(

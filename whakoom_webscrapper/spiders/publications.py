@@ -26,13 +26,11 @@ class PublicationsSpider(Spider):
     name = "publications"
     allowed_domains = ["whakoom.com"]
     url_root = "https://www.whakoom.com/deirdre/lists/"
-    start_urls = [
-        f"{url_root}titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039"
-    ]
+    start_urls = [f"{url_root}titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039"]
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(self, *args: Any):
         """Initialize the WebDriver for scraping."""
-        super().__init__(*args, **kwargs)
+        super().__init__(*args)
         chrome_options = Options()
         chrome_options.add_argument("--headless")  # Ensure GUI is off
         chrome_options.add_argument("--no-sandbox")
@@ -41,7 +39,7 @@ class PublicationsSpider(Spider):
 
         self.driver = webdriver.Chrome(options=chrome_options)
 
-    def parse(self, response: Response, **kwargs: Any) -> Iterator[dict[str, str]]:
+    def parse(self, response: Response) -> Iterator[dict[str, str]]:
         """
         Parse the webpage content after loading it with Selenium.
 
@@ -76,15 +74,11 @@ class PublicationsSpider(Spider):
         while True:
             try:
                 # Check if the "Load more" button is present and clickable
-                load_more_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "loadmoreissues"))
-                )
+                load_more_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.ID, "loadmoreissues")))
                 load_more_button.click()
 
                 # Wait for new content to load after clicking the button
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "list__item"))
-                )
+                WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "list__item")))
             except TimeoutException:
                 # If the button is not found
                 print("Seleniun found no more clickable elements. Had to stop")
@@ -98,8 +92,8 @@ class PublicationsSpider(Spider):
         page_source = self.driver.page_source
         self.driver.quit()
 
-        response = Selector(text=page_source)
-        titles = response.xpath('//span[@class="title"]/a')
+        response_ = Selector(text=page_source)
+        titles = response_.xpath('//span[@class="title"]/a')
         for title in titles:
             link = title.xpath("@href").get()
             title = title.xpath("text()").get()

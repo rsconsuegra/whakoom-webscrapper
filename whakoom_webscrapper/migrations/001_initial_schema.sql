@@ -1,10 +1,7 @@
-# MIGRATION_VERSION
-001
+-- MIGRATION_VERSION: 001
+-- MIGRATION_NAME: initial_schema
 
-# MIGRATION_NAME
-initial_schema
-
-# UP
+-- UP
 CREATE TABLE IF NOT EXISTS lists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     list_id INTEGER NOT NULL UNIQUE,
@@ -17,8 +14,8 @@ CREATE TABLE IF NOT EXISTS lists (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_lists_scrape_status ON lists(scrape_status);
-CREATE INDEX IF NOT EXISTS idx_lists_user_profile ON lists(user_profile);
+CREATE INDEX IF NOT EXISTS idx_lists_scrape_status ON lists (scrape_status);
+CREATE INDEX IF NOT EXISTS idx_lists_user_profile ON lists (user_profile);
 
 CREATE TABLE IF NOT EXISTS titles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -31,8 +28,8 @@ CREATE TABLE IF NOT EXISTS titles (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_titles_scrape_status ON titles(scrape_status);
-CREATE INDEX IF NOT EXISTS idx_titles_title_id ON titles(title_id);
+CREATE INDEX IF NOT EXISTS idx_titles_scrape_status ON titles (scrape_status);
+CREATE INDEX IF NOT EXISTS idx_titles_title_id ON titles (title_id);
 
 CREATE TABLE IF NOT EXISTS lists_titles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -40,13 +37,13 @@ CREATE TABLE IF NOT EXISTS lists_titles (
     title_id INTEGER NOT NULL,
     position INTEGER,
     added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE,
-    FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE,
-    UNIQUE(list_id, title_id)
+    FOREIGN KEY (list_id) REFERENCES lists (id) ON DELETE CASCADE,
+    FOREIGN KEY (title_id) REFERENCES titles (id) ON DELETE CASCADE,
+    UNIQUE (list_id, title_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_lists_titles_list ON lists_titles(list_id);
-CREATE INDEX IF NOT EXISTS idx_lists_titles_title ON lists_titles(title_id);
+CREATE INDEX IF NOT EXISTS idx_lists_titles_list ON lists_titles (list_id);
+CREATE INDEX IF NOT EXISTS idx_lists_titles_title ON lists_titles (title_id);
 
 CREATE TABLE IF NOT EXISTS volumes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,11 +57,11 @@ CREATE TABLE IF NOT EXISTS volumes (
     year INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
+    FOREIGN KEY (title_id) REFERENCES titles (id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_volumes_title ON volumes(title_id);
-CREATE INDEX IF NOT EXISTS idx_volumes_volume_id ON volumes(volume_id);
+CREATE INDEX IF NOT EXISTS idx_volumes_title ON volumes (title_id);
+CREATE INDEX IF NOT EXISTS idx_volumes_volume_id ON volumes (volume_id);
 
 CREATE TABLE IF NOT EXISTS title_metadata (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,7 +78,7 @@ CREATE TABLE IF NOT EXISTS title_metadata (
     status TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
+    FOREIGN KEY (title_id) REFERENCES titles (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS title_enriched (
@@ -97,7 +94,7 @@ CREATE TABLE IF NOT EXISTS title_enriched (
     anilist_url TEXT,
     additional_data TEXT,
     enriched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (title_id) REFERENCES titles(id) ON DELETE CASCADE
+    FOREIGN KEY (title_id) REFERENCES titles (id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS scraping_log (
@@ -111,7 +108,9 @@ CREATE TABLE IF NOT EXISTS scraping_log (
     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS idx_scraping_log_entity ON scraping_log(entity_id, operation_type);
+CREATE INDEX IF NOT EXISTS idx_scraping_log_entity ON scraping_log (
+    entity_id, operation_type
+);
 
 CREATE TABLE IF NOT EXISTS migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +121,7 @@ CREATE TABLE IF NOT EXISTS migrations (
 
 INSERT INTO migrations (version, name) VALUES ('001', 'initial_schema');
 
-# DOWN
+-- DOWN
 DROP TABLE IF EXISTS scraping_log;
 DROP TABLE IF EXISTS title_enriched;
 DROP TABLE IF EXISTS title_metadata;

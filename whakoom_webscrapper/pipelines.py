@@ -11,9 +11,9 @@ from pathlib import Path
 from scrapy import Spider
 from scrapy.exceptions import DropItem
 
-from whakoom_webscrapper.sqlmanager import SQLManager
 from whakoom_webscrapper.configs.configs import db_path
 from whakoom_webscrapper.items import ListsItem, TitlesItem, VolumesItem
+from whakoom_webscrapper.sqlmanager import SQLManager
 
 
 class WhakoomWebscrapperPipeline:
@@ -29,9 +29,9 @@ class WhakoomWebscrapperPipeline:
             sql_dir=str(queries_dir),
             migrations_dir=str(migrations_dir),
         )
-        self.processed_list_ids = set()
-        self.processed_title_ids = set()
-        self.processed_volume_ids = set()
+        self.processed_list_ids: set[int] = set()
+        self.processed_title_ids: set[int] = set()
+        self.processed_volume_ids: set[int] = set()
 
     def open_spider(self, spider: Spider) -> None:
         """Initialize database and apply migrations when spider opens.
@@ -72,9 +72,7 @@ class WhakoomWebscrapperPipeline:
 
         logging.info("Spider finished for: %s", spider.name)
 
-    def process_item(
-        self, item: ListsItem | TitlesItem | VolumesItem, spider: Spider
-    ) -> None:
+    def process_item(self, item: ListsItem | TitlesItem | VolumesItem, spider: Spider) -> None:
         """Process item and save to database with retry logic.
 
         Args:
@@ -103,7 +101,7 @@ class WhakoomWebscrapperPipeline:
 
                 return
 
-            except Exception as e:
+            except Exception as e:  # pylint: disable=W0718
                 logging.error(
                     "Error processing item (attempt %d/%d): %s",
                     attempt + 1,
@@ -121,9 +119,7 @@ class WhakoomWebscrapperPipeline:
                         status="failed",
                         error_message=str(e),
                     )
-                    raise DropItem(
-                        f"Failed to process item after {max_retries} attempts: {e}"
-                    ) from e
+                    raise DropItem(f"Failed to process item after {max_retries} attempts: {e}") from e
 
     def _process_lists_item(self, item: ListsItem, spider: Spider) -> None:
         """Process ListsItem and save to database.

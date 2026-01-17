@@ -2,5 +2,5 @@
 
 from pathlib import Path
 
-db_name = "publications.db"
-db_path = Path.cwd() / "databases" / db_name
+DB_NAME = "publications.db"
+db_path = Path.cwd() / "databases" / DB_NAME

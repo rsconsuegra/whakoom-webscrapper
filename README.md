@@ -288,18 +288,12 @@ The project uses a **file-based migration system** with automatic application:
 
 **Migration File Format** (`migrations/XXX_name.sql`):
 ```sql
-# MIGRATION_VERSION
-001
-
-# MIGRATION_NAME
-initial_schema
-
-# UP
+-- Up
 CREATE TABLE lists (...);
 CREATE TABLE titles (...);
 -- ... more tables
 
-# DOWN
+-- Down
 DROP TABLE IF EXISTS lists;
 DROP TABLE IF EXISTS titles;
 -- ... more drops
@@ -308,10 +302,11 @@ DROP TABLE IF EXISTS titles;
 ### How Migrations Work
 
 1. **Load Pending Migrations**: On spider start, `SQLManager` scans `migrations/` directory
-2. **Check Applied**: Compares migration filenames against `migrations` table in DB
-3. **Apply in Order**: Sorts migrations by filename, applies `UP` sections sequentially
-4. **Track Success**: Inserts version + name into `migrations` table
-5. **Rollback Support**: `DOWN` sections defined for potential future rollback (deferred)
+2. **Parse Metadata**: Extracts version and name from filename (e.g., `001_initial_schema.sql` → `001`, `initial_schema`)
+3. **Check Applied**: Compares migration versions against `migrations` table in DB
+4. **Apply in Order**: Sorts migrations by filename, applies `-- Up` sections sequentially
+5. **Track Success**: Automatically inserts version + name into `migrations` table
+6. **Rollback Support**: `-- Down` sections defined for potential future rollback (deferred)
 
 ### Migration Features
 

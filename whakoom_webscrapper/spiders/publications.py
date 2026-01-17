@@ -1,8 +1,11 @@
-"""Scrapper to get all the titles in a list"""
+"""Scrapper to get all the titles in a list."""
 
+from collections.abc import Iterator
 from logging import WARNING
+from typing import Any
 
-import scrapy
+from scrapy import Selector, Spider
+from scrapy.http import Response
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -17,13 +20,17 @@ LOGGER.setLevel(WARNING)
 urllibLogger.setLevel(WARNING)
 
 
-class ShoComiSpider(scrapy.Spider):
+class PublicationsSpider(Spider):
+    """Spider to get all the titles in a list."""
+
     name = "publications"
     allowed_domains = ["whakoom.com"]
-    start_urls = ["https://www.whakoom.com/deirdre/lists/titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039"]
+    url_root = "https://www.whakoom.com/deirdre/lists/"
+    start_urls = [f"{url_root}titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039"]
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, *args: Any):
+        """Initialize the WebDriver for scraping."""
+        super().__init__(*args)
         chrome_options = Options()
         chrome_options.add_argument("--headless")  # Ensure GUI is off
         chrome_options.add_argument("--no-sandbox")
@@ -32,22 +39,25 @@ class ShoComiSpider(scrapy.Spider):
 
         self.driver = webdriver.Chrome(options=chrome_options)
 
-    def parse(self, response):
+    def parse(self, response: Response) -> Iterator[dict[str, str]]:
         """
         Parse the webpage content after loading it with Selenium.
 
         Args:
-        response (scrapy.http.Response): The initial response object from Scrapy.
+            response (scrapy.http.Response): The initial response object from Scrapy.
 
         Returns:
-        Iterable: An iterable of dictionaries containing the title and link (href) of each publication.
+            Iterable: An iterable of dictionaries containing
+            the title and link (href) of each publication.
 
         Raises:
-        Exception: If an exception is encountered while loading the page or clicking the "Load more" button.
+            Exception: If an exception is encountered while
+            loading the page or clicking the "Load more" button.
 
-        The method first navigates to the URL of the initial response object using Selenium's WebDriver.
-        It then enters a loop that continuously tries to locate and click the "Load more" button,
-        waiting for 10 seconds between each attempt.
+        The method first navigates to the URL of the initial response object
+        using Selenium's WebDriver.
+        It then enters a loop that continuously tries to locate and click
+        the "Load more" button, waiting for 10 seconds between each attempt.
         If the button is not found or any other exception occurs, the loop is broken.
 
         After the loop, the final page source is obtained using Selenium's `page_source` attribute,
@@ -73,7 +83,7 @@ class ShoComiSpider(scrapy.Spider):
                 # If the button is not found
                 print("Seleniun found no more clickable elements. Had to stop")
                 break
-            except Exception as e:
+            except Exception as e:  # pylint: disable=W0718
                 print(f"Seleniun encountered an Exception: {e}")
                 print(f"Exception type: {e.__class__.__name__}")
                 break
@@ -82,8 +92,8 @@ class ShoComiSpider(scrapy.Spider):
         page_source = self.driver.page_source
         self.driver.quit()
 
-        response = scrapy.Selector(text=page_source)
-        titles = response.xpath('//span[@class="title"]/a')
+        response_ = Selector(text=page_source)
+        titles = response_.xpath('//span[@class="title"]/a')
         for title in titles:
             link = title.xpath("@href").get()
             title = title.xpath("text()").get()

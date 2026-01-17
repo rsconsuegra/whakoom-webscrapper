@@ -10,9 +10,17 @@ https://docs.scrapy.org/en/latest/topics/spider-middleware.html
 """
 
 from copy import copy
+from logging import Handler
+from pathlib import Path
+from typing import Any
 
 import scrapy.utils.log
 from colorlog import ColoredFormatter
+
+PROJECT_ROOT = Path(__file__).parent.parent
+DATABASE_DIR = PROJECT_ROOT / "databases"
+DATABASE_DIR.mkdir(exist_ok=True)
+DATABASE_PATH = DATABASE_DIR / "publications.db"
 
 color_formatter = ColoredFormatter(
     (
@@ -30,16 +38,16 @@ color_formatter = ColoredFormatter(
         "CRITICAL": "red,bg_white",
     },
 )
-_get_handler = copy(scrapy.utils.log._get_handler)
+_get_handler = copy(scrapy.utils.log._get_handler)  # pylint: disable=W0212
 
 
-def _get_handler_custom(*args, **kwargs):
+def _get_handler_custom(*args: Any, **kwargs: Any) -> Handler:
     handler = _get_handler(*args, **kwargs)
     handler.setFormatter(color_formatter)
     return handler
 
 
-scrapy.utils.log._get_handler = _get_handler_custom
+scrapy.utils.log._get_handler = _get_handler_custom  # pylint: disable=W0212
 
 # DUPEFILTER_CLASS = "scrapy_splash.SplashAwareDupeFilter"
 # HTTPCACHE_STORAGE = "scrapy_splash.SplashAwareFSCacheStorage"
@@ -50,7 +58,7 @@ SPIDER_MODULES = ["whakoom_webscrapper.spiders"]
 NEWSPIDER_MODULE = "whakoom_webscrapper.spiders"
 
 ITEM_PIPELINES = {
-   "whakoom_webscrapper.pipelines.WhakoomWebscrapperPipeline": 300,
+    "whakoom_webscrapper.pipelines.WhakoomWebscrapperPipeline": 300,
 }
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
@@ -120,7 +128,7 @@ AUTOTHROTTLE_ENABLED = True
 # AUTOTHROTTLE_DEBUG = False
 
 # Enable and configure HTTP caching (disabled by default)
-# See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html#httpcache-middleware-settings
+# https://docs.scrapy.org/en/latest/topics/downloader-middleware.html#httpcache-middleware-settings
 HTTPCACHE_ENABLED = True
 # HTTPCACHE_EXPIRATION_SECS = 0
 # HTTPCACHE_DIR = "httpcache"

@@ -1,4 +1,5 @@
 """Set all constants and paths."""
+
 from pathlib import Path
 
 DB_NAME = "publications.db"

@@ -69,6 +69,7 @@ class TitlesItem:
         return getattr(self, attr)
 
 
+# pylint: disable=too-many-instance-attributes
 @dataclass(kw_only=True)
 class VolumesItem:
     """Represents a scraped volume.

@@ -101,7 +101,7 @@ class WhakoomWebscrapperPipeline:
 
                 return
 
-            except Exception as e:
+            except Exception as e:  # pylint: disable=W0718
                 logging.error(
                     "Error processing item (attempt %d/%d): %s",
                     attempt + 1,

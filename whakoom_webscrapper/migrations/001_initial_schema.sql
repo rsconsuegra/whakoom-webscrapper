@@ -1,7 +1,4 @@
--- MIGRATION_VERSION: 001
--- MIGRATION_NAME: initial_schema
-
--- UP
+-- Up
 CREATE TABLE IF NOT EXISTS lists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     list_id INTEGER NOT NULL UNIQUE,
@@ -119,9 +116,7 @@ CREATE TABLE IF NOT EXISTS migrations (
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-INSERT INTO migrations (version, name) VALUES ('001', 'initial_schema');
-
--- DOWN
+-- Down
 DROP TABLE IF EXISTS scraping_log;
 DROP TABLE IF EXISTS title_enriched;
 DROP TABLE IF EXISTS title_metadata;

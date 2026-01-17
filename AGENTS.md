@@ -2,7 +2,7 @@
 
 ## 1. Project Context
 
-This is a **Python 3.12 web scraping project** built with **Scrapy** to extract manga collection data from Whakoom user profiles.
+This is a **Python 3.12 web scraping project** built with **Scrapy** to extract manga collection data from Whakoom user profiles. This is inteded as a hobby yet mantainable project with best practices.
 
 **Core stack:**
 

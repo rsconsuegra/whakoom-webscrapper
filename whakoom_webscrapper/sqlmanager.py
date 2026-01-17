@@ -166,11 +166,42 @@ class SQLManager:
             cursor.execute("SELECT * FROM migrations ORDER BY version")
             return [dict(row) for row in cursor.fetchall()]
 
+    def _parse_migration_filename(self, filename: str) -> tuple[str, str] | None:
+        """Parse migration version and name from filename.
+
+        Args:
+            filename: Migration filename (e.g., '001_initial_schema.sql')
+
+        Returns:
+            Tuple of (version, name) or None if invalid format.
+
+        Example:
+            '001_initial_schema.sql' → ('001', 'initial_schema')
+        """
+        if not filename.endswith(".sql"):
+            return None
+
+        name_without_ext = filename[:-4]
+        parts = name_without_ext.split("_", 1)
+
+        if len(parts) != 2:
+            return None
+
+        version, name = parts
+
+        if not version or not name:
+            return None
+
+        return version, name
+
     def get_pending_migrations(self) -> list[dict[str, str]]:
         """Get all pending migrations (not yet applied).
 
         Returns:
             list: A list of dictionaries containing migration information.
+
+        Raises:
+            RuntimeError: If migration filename doesn't match expected pattern.
         """
         if not self.migrations_dir or not os.path.exists(self.migrations_dir):
             return []
@@ -181,24 +212,24 @@ class SQLManager:
         for filename in sorted(os.listdir(self.migrations_dir)):
             if filename.endswith(".sql"):
                 file_path = os.path.join(self.migrations_dir, filename)
-                with open(file_path, encoding="utf-8") as file:
-                    sql_content = file.read()
+                filename_metadata = self._parse_migration_filename(filename)
 
-                version_match = re.search(r"--\s*MIGRATION_VERSION\s*\n(\d+)", sql_content)
-                name_match = re.search(r"--\s*MIGRATION_NAME\s*\n(.+)", sql_content)
+                if not filename_metadata:
+                    raise RuntimeError(
+                        f"Invalid migration filename format: {filename}. "
+                        "Expected format: XXX_name.sql (e.g., 001_initial_schema.sql)"
+                    )
 
-                if version_match and name_match:
-                    version = version_match.group(1).strip()
-                    name = name_match.group(1).strip()
+                version, name = filename_metadata
 
-                    if version not in applied:
-                        pending.append(
-                            {
-                                "version": version,
-                                "name": name,
-                                "file_path": file_path,
-                            }
-                        )
+                if version not in applied:
+                    pending.append(
+                        {
+                            "version": version,
+                            "name": name,
+                            "file_path": file_path,
+                        }
+                    )
 
         return pending
 
@@ -209,12 +240,13 @@ class SQLManager:
 
         for migration in pending:
             version = migration["version"]
+            name = migration["name"]
             file_path = migration["file_path"]
 
             with open(file_path, encoding="utf-8") as file:
                 sql_content = file.read()
 
-            up_match = re.search(r"--\s*UP\s*\n(.*?)(?=\n#.*DOWN|$)", sql_content, re.DOTALL)
+            up_match = re.search(r"--\s*Up\s*\n(.*?)(?=\n--.*Down|$)", sql_content, re.DOTALL)
             if up_match:
                 up_script = up_match.group(1).strip()
 
@@ -222,6 +254,10 @@ class SQLManager:
                     cursor = conn.cursor()
                     try:
                         cursor.executescript(up_script)
+                        cursor.execute(
+                            "INSERT INTO migrations (version, name) VALUES (?, ?)",
+                            (version, name),
+                        )
                         conn.commit()
                     except sqlite3.Error as e:
                         conn.rollback()

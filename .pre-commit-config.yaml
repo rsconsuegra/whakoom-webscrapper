@@ -58,4 +58,6 @@ repos:
     rev: 4.0.0
     hooks:
       - id: sqlfluff-lint
+        args: ["--dialect", "sqlite"]
       - id: sqlfluff-fix
+        args: ["--dialect", "sqlite"]

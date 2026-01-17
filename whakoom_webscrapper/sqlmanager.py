@@ -1,9 +1,9 @@
+"""Manages database connections, named queries, and migrations."""
+
 import os
 import re
-
-from typing import Any
-
 import sqlite3
+from typing import Any
 
 
 class SQLManager:
@@ -44,7 +44,7 @@ class SQLManager:
             for filename in os.listdir(self.sql_dir):
                 if filename.endswith(".sql"):
                     file_path = os.path.join(self.sql_dir, filename)
-                    with open(file_path, "r") as file:
+                    with open(file_path, "r", encoding="utf-8") as file:
                         sql_content = file.read()
                     named_queries = self._parse_named_queries(sql_content)
                     queries.update(named_queries)
@@ -90,9 +90,7 @@ class SQLManager:
         sanitized_query = self._sanitize_query(query)
         return sanitized_query.format(**params)
 
-    def execute_query(
-        self, query_name: str, params: dict[str, Any] | None = None
-    ) -> list[tuple[Any, ...]]:
+    def execute_query(self, query_name: str, params: dict[str, Any] | None = None) -> list[tuple[Any, ...]]:
         """Execute a named query with optional parameters.
 
         Args:
@@ -118,9 +116,7 @@ class SQLManager:
             conn.commit()
             return cursor.fetchall()
 
-    def execute_parametrized_query(
-        self, query_name: str, params: tuple[Any, ...]
-    ) -> list[tuple[Any, ...]]:
+    def execute_parametrized_query(self, query_name: str, params: tuple[Any, ...]) -> list[tuple[Any, ...]]:
         """Execute a named query with positional parameters.
 
         Args:
@@ -185,12 +181,10 @@ class SQLManager:
         for filename in sorted(os.listdir(self.migrations_dir)):
             if filename.endswith(".sql"):
                 file_path = os.path.join(self.migrations_dir, filename)
-                with open(file_path, "r") as file:
+                with open(file_path, "r", encoding="utf-8") as file:
                     sql_content = file.read()
 
-                version_match = re.search(
-                    r"#\s*MIGRATION_VERSION\s*\n(\d+)", sql_content
-                )
+                version_match = re.search(r"#\s*MIGRATION_VERSION\s*\n(\d+)", sql_content)
                 name_match = re.search(r"#\s*MIGRATION_NAME\s*\n(.+)", sql_content)
 
                 if version_match and name_match:
@@ -217,12 +211,10 @@ class SQLManager:
             version = migration["version"]
             file_path = migration["file_path"]
 
-            with open(file_path, "r") as file:
+            with open(file_path, "r", encoding="utf-8") as file:
                 sql_content = file.read()
 
-            up_match = re.search(
-                r"#\s*UP\s*\n(.*?)(?=\n#.*DOWN|$)", sql_content, re.DOTALL
-            )
+            up_match = re.search(r"#\s*UP\s*\n(.*?)(?=\n#.*DOWN|$)", sql_content, re.DOTALL)
             if up_match:
                 up_script = up_match.group(1).strip()
 

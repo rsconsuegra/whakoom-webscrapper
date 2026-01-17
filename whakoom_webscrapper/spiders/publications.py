@@ -26,7 +26,9 @@ class PublicationsSpider(Spider):
     name = "publications"
     allowed_domains = ["whakoom.com"]
     url_root = "https://www.whakoom.com/deirdre/lists/"
-    start_urls = [f"{url_root}titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039"]
+    start_urls = [
+        f"{url_root}titulos_editados_en_espana_publicados_en_la_revista_sho-comi_116039"
+    ]
 
     def __init__(self, *args: Any, **kwargs: Any):
         """Initialize the WebDriver for scraping."""
@@ -74,11 +76,15 @@ class PublicationsSpider(Spider):
         while True:
             try:
                 # Check if the "Load more" button is present and clickable
-                load_more_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.ID, "loadmoreissues")))
+                load_more_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "loadmoreissues"))
+                )
                 load_more_button.click()
 
                 # Wait for new content to load after clicking the button
-                WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "list__item")))
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "list__item"))
+                )
             except TimeoutException:
                 # If the button is not found
                 print("Seleniun found no more clickable elements. Had to stop")

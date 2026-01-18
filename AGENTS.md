@@ -35,6 +35,7 @@ These rules override all others.
 4. **NEVER ignore linting errors**
 
    * All linting errors must be addressed
+   * You are not allowed to modify .pre-commit-config.yaml to disable rules
    * Disabling rules requires **explicit user permission** and an inline comment
 
 ---
@@ -250,6 +251,16 @@ Database-impacting changes must be tested.
 
 ## 9. Git & Commits
 
+### Git Rules
+
+* Branches should be names `feature/description` or `fix/description`
+* Always check in which branch you currently are before staging and/or commiting changes. If you are not in the correct branch, create a new branch from the correct base.
+* Never commit to `main` or `develop` directly
+* Never use Reset --Hard unless explicitly ordered
+* Never use force push unless explicitly ordered
+* Never commit changes without asking the user first
+
+
 ### Commit Format
 
 Use **Conventional Commits**:
@@ -266,7 +277,6 @@ docs: update AGENTS.md
 2. Review `git diff`
 3. Update README if behavior or scope changed
 4. Push
-
 ---
 
 ## 10. Summary Checklist (Agent Self-Audit)
@@ -292,5 +302,7 @@ This project prioritizes:
 * **Correctness over speed**
 * **Determinism over cleverness**
 * **Explicit behavior over implicit assumptions**
+
+If hurry/panic mode is triggered, **stop immediately** and explain the situation to the user, requesting further instructions.
 
 If uncertain, **stop and ask**.

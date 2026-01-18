@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 from scrapy import Spider
 from scrapy.http import Response
 
-from whakoom_webscrapper.items import ListsItem
+from whakoom_webscrapper.models import ListsItem
 
 
 class ListSpider(Spider):

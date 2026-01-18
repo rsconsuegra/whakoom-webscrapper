@@ -250,6 +250,15 @@ Database-impacting changes must be tested.
 
 ## 9. Git & Commits
 
+### Git Rules
+
+* Branches should be names `feature/description` or `fix/description`
+* Always check in which branch you currently are before staging and/or commiting changes. If you are not in the correct branch, create a new branch from the correct base.
+* Never commit to `main` or `develop` directly
+* Never use Reset --Hard unless explicitly ordered
+* Never commit changes without asking the user first
+
+
 ### Commit Format
 
 Use **Conventional Commits**:
@@ -266,7 +275,6 @@ docs: update AGENTS.md
 2. Review `git diff`
 3. Update README if behavior or scope changed
 4. Push
-
 ---
 
 ## 10. Summary Checklist (Agent Self-Audit)

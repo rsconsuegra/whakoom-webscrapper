@@ -3,6 +3,7 @@
 import os
 import re
 import sqlite3
+from dataclasses import fields
 from typing import Any
 
 
@@ -142,16 +143,14 @@ class SQLManager:
         """Create the migrations table if it doesn't exist."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS migrations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     version TEXT NOT NULL UNIQUE,
                     name TEXT NOT NULL,
                     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """
-            )
+            """)
             conn.commit()
 
     def get_applied_migrations(self) -> list[dict[str, Any]]:
@@ -262,6 +261,142 @@ class SQLManager:
                     except sqlite3.Error as e:
                         conn.rollback()
                         raise RuntimeError(f"Migration {version} failed: {e}") from e
+
+    def _execute_raw(self, query: str, params: tuple) -> None:
+        """Execute raw SQL query with parameters.
+
+        Args:
+            query: The SQL query to execute.
+            params: Tuple of parameters for query.
+
+        Raises:
+            sqlite3.Error: If query fails.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            conn.commit()
+
+    def insert(self, model_class: type[Any], instance: Any) -> None:
+        """Insert a model instance into database.
+
+        Args:
+            model_class: The dataclass model type.
+            instance: The instance to insert.
+
+        Raises:
+            ValueError: If instance type doesn't match model_class or attributes missing.
+            sqlite3.Error: If query fails.
+        """
+        if not isinstance(instance, model_class):
+            raise ValueError(f"Instance must be of type {model_class.__name__}")
+
+        table = getattr(model_class, "table_name", "")
+        to_tuple_method = getattr(instance, "to_tuple", None)
+
+        if not table:
+            raise ValueError(f"Model {model_class.__name__} has no 'table_name' attribute")
+        if to_tuple_method is None:
+            raise ValueError(f"Instance of {model_class.__name__} has no 'to_tuple()' method")
+
+        model_fields = [f.name for f in fields(model_class) if f.name != "table_name"]
+        placeholders = ", ".join(["?"] * len(model_fields))
+        columns = ", ".join(model_fields)
+
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+        params = to_tuple_method()
+
+        self._execute_raw(query, params)
+
+    def update(self, model_class: type[Any], instance: Any, id_field: str, id_value: int | str) -> None:
+        """Update a model instance in database.
+
+        Args:
+            model_class: The dataclass model type.
+            instance: The instance with updated values.
+            id_field: The field name to use as WHERE condition.
+            id_value: The value of ID field to match.
+
+        Raises:
+            ValueError: If instance type doesn't match model_class or attributes missing.
+            sqlite3.Error: If query fails.
+        """
+        if not isinstance(instance, model_class):
+            raise ValueError(f"Instance must be of type {model_class.__name__}")
+
+        table = getattr(model_class, "table_name", "")
+
+        if not table:
+            raise ValueError(f"Model {model_class.__name__} has no 'table_name' attribute")
+
+        model_fields = [f.name for f in fields(model_class) if f.name not in ["table_name", id_field]]
+        set_clause = ", ".join([f"{field} = ?" for field in model_fields])
+        query = f"UPDATE {table} SET {set_clause} WHERE {id_field} = ?"
+
+        values = [getattr(instance, field) for field in model_fields]
+        values.append(id_value)
+        params = tuple(values)
+
+        self._execute_raw(query, params)
+
+    def insert_relationship(self, table: str, **kwargs: Any) -> None:
+        """Insert a relationship into a junction table.
+
+        Args:
+            table: The junction table name.
+            **kwargs: Column name/value pairs.
+        """
+        columns = ", ".join(kwargs.keys())
+        placeholders = ", ".join(["?"] * len(kwargs))
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+        params = tuple(kwargs.values())
+
+        self._execute_raw(query, params)
+
+    def update_single_field(  # pylint: disable=too-many-arguments, R0917
+        self,
+        table: str,
+        id_field: str,
+        id_value: int | str,
+        field_name: str,
+        field_value: Any,
+    ) -> None:
+        """Update a single field in a table.
+
+        Args:
+            table: The table name.
+            id_field: The field name to use as WHERE condition.
+            id_value: The value of ID field to match.
+            field_name: The field to update.
+            field_value: The new value for the field.
+
+        Raises:
+            sqlite3.Error: If query fails.
+        """
+        query = f"UPDATE {table} SET {field_name} = ? WHERE {id_field} = ?"
+        self._execute_raw(query, (field_value, id_value))
+
+    def select_by_id(self, table: str, id_field: str, id_value: int | str) -> list[dict[str, Any]]:
+        """Select a record from table by ID field.
+
+        Args:
+            table: The table name.
+            id_field: The field name to use as WHERE condition.
+            id_value: The value of ID field to match.
+
+        Returns:
+            List of dictionaries with column names as keys.
+        """
+        query = f"SELECT * FROM {table} WHERE {id_field} = ?"
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute(query, (id_value,))
+            result = cursor.fetchone()
+            if result:
+                return [dict(result)]
+            return []
 
     def log_scraping_operation(  # pylint: disable=R0913,R0917
         self,

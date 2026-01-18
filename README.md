@@ -324,6 +324,197 @@ DROP TABLE IF EXISTS titles;
 
 ---
 
+## ORM Models and SQLManager Enhancements
+
+The project includes **type-safe dataclass models** and an enhanced **SQLManager** to simplify database operations while maintaining simplicity.
+
+### Model Design
+
+**Location:** `whakoom_webscrapper/models.py`
+
+All database tables have corresponding dataclass models:
+
+```python
+from whakoom_webscrapper.models import ListModel, TitleModel, VolumeModel
+
+@dataclass(kw_only=True)
+class ListModel:
+    list_id: int
+    title: str
+    url: str
+    user_profile: str
+    scrape_status: str = "pending"
+    scraped_at: str | None = None
+
+    table_name: str = "lists"
+
+    def to_tuple(self) -> tuple:
+        return (self.list_id, self.title, self.url, ...)
+
+    def __getitem__(self, attr: str) -> Any:
+        return getattr(self, attr)
+```
+
+**Key features:**
+- `@dataclass(kw_only=True)`: Explicit field initialization
+- `table_name`: Class attribute for table mapping
+- `to_tuple()`: Converts model to parameter tuple for SQL queries
+- `__getitem__()`: Compatibility with existing code patterns
+
+**Available models:**
+- `ListModel` - User lists
+- `TitleModel` - Manga titles
+- `VolumeModel` - Volume data
+- `ListTitleModel` - Many-to-many list-title relationships
+- `TitleMetadataModel` - Title metadata
+- `TitleEnrichedModel` - External enrichment data
+- `ScrapingLogModel` - Scraping operation logs
+- `MigrationModel` - Migration tracking
+
+---
+
+### SQLManager Enhancements
+
+**Location:** `whakoom_webscrapper/sqlmanager.py`
+
+Enhanced SQLManager with ORM-like helper methods for type-safe database operations.
+
+#### insert(model_class, instance)
+
+Insert a model instance into database.
+
+```python
+from whakoom_webscrapper.models import ListModel
+from whakoom_webscrapper.sqlmanager import SQLManager
+
+sql_manager = SQLManager(db_path="databases/publications.db")
+
+list_model = ListModel(
+    list_id=123,
+    title="My Manga List",
+    url="https://whakoom.com/list/123",
+    user_profile="deirdre",
+    scrape_status="pending",
+)
+
+sql_manager.insert(ListModel, list_model)
+```
+
+**Features:**
+- Type validation: Ensures instance matches model_class
+- Dynamic query generation: Builds INSERT from model fields
+- Parameterized queries: Prevents SQL injection
+
+#### update(model_class, instance, id_field, id_value)
+
+Update all fields of a model instance by ID.
+
+```python
+updated_list = ListModel(
+    list_id=123,
+    title="Updated Title",
+    url="https://whakoom.com/list/123",
+    user_profile="deirdre",
+    scrape_status="completed",
+)
+
+sql_manager.update(ListModel, updated_list, "list_id", 123)
+```
+
+**Features:**
+- Updates all model fields except `table_name` and ID field
+- Uses parameterized queries
+
+#### update_single_field(table, id_field, id_value, field_name, field_value)
+
+Update a single field without affecting other data.
+
+```python
+# Mark list as completed without overwriting other fields
+sql_manager.update_single_field(
+    "lists", "list_id", 123, "scrape_status", "completed"
+)
+```
+
+**Use case:** Simple status updates (e.g., marking lists as completed) without creating full model instances.
+
+#### insert_relationship(table, **kwargs)
+
+Insert into junction tables (many-to-many relationships).
+
+```python
+sql_manager.insert_relationship(
+    "lists_titles",
+    list_id=123,
+    title_id=456,
+    position=1,
+)
+```
+
+**Use case:** Connecting lists to titles via `lists_titles` junction table.
+
+#### select_by_id(table, id_field, id_value)
+
+Select a record from table by ID field.
+
+```python
+results = sql_manager.select_by_id("lists", "list_id", 123)
+if results:
+    list_data = results[0]
+    print(f"List: {list_data['title']}, Status: {list_data['scrape_status']}")
+```
+
+**Use case:** Fetching a specific record by ID without raw SQL.
+
+---
+
+### Pipeline Usage Pattern
+
+**Before (manual SQL tuples):**
+```python
+self.sql_manager.execute_parametrized_query(
+    "INSERT_OR_UPDATE_LIST",
+    (item.list_id, item.title, item.url, ...),
+)
+```
+
+**After (type-safe models):**
+```python
+from whakoom_webscrapper.models import ListModel
+
+list_model = ListModel(
+    list_id=item.list_id,
+    title=item.title,
+    url=item.url,
+    user_profile=item.user_profile,
+    scrape_status=item.scrape_status,
+    scraped_at=item.scraped_at,
+)
+
+sql_manager.insert(ListModel, list_model)
+```
+
+**Benefits:**
+- **Type safety**: IDE autocomplete and type checking
+- **Less error-prone**: No manual tuple ordering
+- **Self-documenting**: Model fields visible in code
+- **DRY**: Single source of truth for database schema
+
+---
+
+### Benefits of Enhanced SQLManager
+
+* **Simpler than full ORM**: No Session management, declarative base, or relationship mapping
+* **Type-safe**: Compile-time type checking with mypy
+* **Easy to learn**: Gradual adoption, learn as you go
+* **No new dependencies**: Pure Python 3.12, uses stdlib dataclasses
+* **Project scale**: Perfect for hobby/exploratory projects
+* **Explicit control**: Full SQL visibility when needed
+
+---
+
+
+
 ## Functional Requirements
 
 ### Required Behavior
@@ -365,8 +556,11 @@ DROP TABLE IF EXISTS titles;
 * Database schema **finalized** with migration support
 * `ListSpider` integrated with DB and pipeline
 * Migration system operational
+* ORM models for type-safe database operations
+* Enhanced SQLManager with insert/update helpers
 * Logging to `scraping_log` implemented
 * Retry logic with exponential backoff implemented
+
 
 ---
 
@@ -498,9 +692,22 @@ This project includes:
   * `TitleMetadataItem` - Metadata for titles
   * `TitlesListItem` - Many-to-many relationship
 
+* **ORM Models** (Dataclasses)
+  * `ListModel` - Database model for lists table
+  * `TitleModel` - Database model for titles table
+  * `VolumeModel` - Database model for volumes table
+  * `ListTitleModel` - Database model for lists_titles junction table
+  * `TitleMetadataModel` - Database model for title_metadata table
+  * `TitleEnrichedModel` - Database model for title_enriched table
+  * `ScrapingLogModel` - Database model for scraping_log table
+  * `MigrationModel` - Database model for migrations table
+
 * **SQL Management**
-  * `SQLManager` - Database and query management
-  * Named queries in `queries/*.sql`
+  * `SQLManager` - Database and query management with ORM helpers
+    * `insert()` - Type-safe model insertion
+    * `update()` - Update all model fields by ID
+    * `update_single_field()` - Update single field without affecting other data
+    * `insert_relationship()` - Insert into junction tables
   * Migrations in `migrations/*.sql`
 
 ---

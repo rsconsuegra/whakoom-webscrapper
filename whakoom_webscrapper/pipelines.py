@@ -12,11 +12,11 @@ from scrapy import Spider
 from scrapy.exceptions import DropItem
 
 from whakoom_webscrapper.configs.configs import db_path
-from whakoom_webscrapper.items import ListsItem, TitlesItem, TitlesListItem, VolumesItem
 from whakoom_webscrapper.models import (
-    ListModel,
-    TitleModel,
-    VolumeModel,
+    ListsItem,
+    TitlesItem,
+    TitlesListItem,
+    VolumesItem,
 )
 from whakoom_webscrapper.sqlmanager import SQLManager
 
@@ -146,15 +146,7 @@ class WhakoomWebscrapperPipeline:
             status="started",
         )
 
-        list_model = ListModel(
-            list_id=item.list_id,
-            title=item.title,
-            url=item.url,
-            user_profile=item.user_profile,
-            scrape_status=item.scrape_status,
-            scraped_at=item.scraped_at,
-        )
-        self.sql_manager.insert(ListModel, list_model)
+        self.sql_manager.insert(ListsItem, item)
 
         self.processed_list_ids.add(item.list_id)
 
@@ -181,14 +173,7 @@ class WhakoomWebscrapperPipeline:
             status="started",
         )
 
-        title_model = TitleModel(
-            title_id=item.title_id,
-            title=item.title,
-            url=item.url,
-            scrape_status=item.scrape_status,
-            scraped_at=item.scraped_at,
-        )
-        self.sql_manager.insert(TitleModel, title_model)
+        self.sql_manager.insert(TitlesItem, item)
 
         self.processed_title_ids.add(item.title_id)
 
@@ -215,17 +200,7 @@ class WhakoomWebscrapperPipeline:
             status="started",
         )
 
-        volume_model = VolumeModel(
-            volume_id=item.volume_id,
-            title_id=item.title_id,
-            volume_number=item.volume_number,
-            title=item.title,
-            url=item.url,
-            isbn=item.isbn,
-            publisher=item.publisher,
-            year=item.year,
-        )
-        self.sql_manager.insert(VolumeModel, volume_model)
+        self.sql_manager.insert(VolumesItem, item)
 
         self.processed_volume_ids.add(item.volume_id)
 

@@ -32,14 +32,14 @@ repos:
         types_or: [ python, pyi, jupyter ]
         args:
           - --line-length=128
-  # - repo: https://github.com/pycqa/pylint
-  #   rev: v4.0.4
-  #   hooks:
-  #     - id: pylint
-  #       language: system
-  #       args:
-  #        - --max-line-length=128
-  #        verbose: true
+  - repo: https://github.com/pycqa/pylint
+    rev: v4.0.4
+    hooks:
+      - id: pylint
+        language: system
+        args:
+          - --max-line-length=128
+        verbose: true
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.19.1
     hooks:

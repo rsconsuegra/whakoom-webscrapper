@@ -70,14 +70,14 @@ class TitlesItem:
     Attributes:
         title_id (int): The WhaKoom internal title ID.
         title (str): The title of manga.
-        url (str): The URL of the title page.
         scrape_status (str): The scraping status (pending, in_progress, completed, failed).
         scraped_at (str | None): Timestamp when title was scraped.
+        title_url (str | None): The full URL from anchor tag.
     """
 
     title_id: int
     title: str
-    url: str
+    title_url: str
     scrape_status: str = "pending"
     scraped_at: str | None = None
 
@@ -92,9 +92,9 @@ class TitlesItem:
         return (
             self.title_id,
             self.title,
-            self.url,
             self.scrape_status,
             self.scraped_at,
+            self.title_url,
         )
 
     def __getitem__(self, attr: str) -> str:

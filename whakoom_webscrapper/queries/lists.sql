@@ -62,3 +62,16 @@ SELECT
     scraped_at
 FROM lists
 ORDER BY id;
+
+# GET_LISTS_FOR_PROCESSING
+SELECT
+    id,
+    list_id,
+    title,
+    url,
+    user_profile,
+    scrape_status,
+    scraped_at
+FROM lists
+WHERE scrape_status = ?
+ORDER BY id;

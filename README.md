@@ -748,6 +748,36 @@ This is a **hard requirement**.
 
 ---
 
+## Documentation
+
+For detailed documentation, see the `docs/` folder:
+
+### Quick Start
+- [Getting Started](docs/getting-started.md) - Quick start guide for running spiders
+
+### Architecture
+- [Architecture Overview](docs/architecture.md) - System architecture and design decisions
+
+### Workflows
+- [Complete Scraping Workflow](docs/workflows/scraping-flow.md) - End-to-end flow with real examples
+- [List Spider Workflow](docs/workflows/list-spider-workflow.md) - Detailed list spider process
+- [Publications Spider Workflow](docs/workflows/publications-spider-workflow.md) - Detailed publications spider process
+- [Title Spider Workflow](docs/workflows/title-spider-workflow.md) - Future title spider documentation
+
+### Database
+- [Database Schema](docs/database/schema.md) - Complete table documentation with ER diagrams
+- [Migrations Guide](docs/database/migrations-guide.md) - Working with migrations
+- [SQLManager Guide](docs/database/sqlmanager-guide.md) - SQLManager usage and ORM-like methods
+- [Queries Reference](docs/database/queries-reference.md) - Reference for all named SQL queries
+
+### Development
+- [Contributing Guide](docs/development/contributing.md) - How to contribute (to be created)
+- [Adding Spiders](docs/development/adding-spiders.md) - Creating new spiders (to be created)
+- [Testing Guide](docs/development/testing-guide.md) - Testing practices (to be created)
+- [Troubleshooting](docs/development/troubleshooting.md) - Common issues and solutions (to be created)
+
+---
+
 ## How an AI Agent Should Approach This Project
 
 An AI agent working on this codebase should:

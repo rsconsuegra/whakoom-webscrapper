@@ -12,12 +12,7 @@ from scrapy import Spider
 from scrapy.exceptions import DropItem
 
 from whakoom_webscrapper.configs.configs import db_path
-from whakoom_webscrapper.models import (
-    ListsItem,
-    TitlesItem,
-    TitlesListItem,
-    VolumesItem,
-)
+from whakoom_webscrapper.models import ListsItem, TitlesItem, TitlesListItem
 from whakoom_webscrapper.sqlmanager import SQLManager
 
 
@@ -36,7 +31,6 @@ class WhakoomWebscrapperPipeline:
         )
         self.processed_list_ids: set[int] = set()
         self.processed_title_ids: set[int] = set()
-        self.processed_volume_ids: set[int] = set()
         self.processed_relationship_ids: set[tuple[int, int]] = set()
 
     def open_spider(self, spider: Spider) -> None:
@@ -57,7 +51,7 @@ class WhakoomWebscrapperPipeline:
         logging.info("Migrations applied and spider started for: %s", spider.name)
 
     def close_spider(self, spider: Spider) -> None:
-        """Log completion and update statuses when spider closes.
+        """Log completion and update statuses on spider completion.
 
         Args:
             spider (Spider): The spider instance that is being closed.
@@ -69,21 +63,24 @@ class WhakoomWebscrapperPipeline:
             status="success",
         )
 
-        for list_id in self.processed_list_ids:
-            self.sql_manager.update_single_field("lists", "list_id", list_id, "scrape_status", "completed")
-            logging.info("Updated list_id %s status to completed", list_id)
+        if spider.name == "publications":
+            for list_id in self.processed_list_ids:
+                self.sql_manager.execute_parametrized_query(
+                    "UPDATE_LIST_STATUS", ("completed", list_id)
+                )
+                logging.info("Updated list_id %s status to completed", list_id)
 
         logging.info("Spider finished for: %s", spider.name)
 
     def process_item(
         self,
-        item: ListsItem | TitlesItem | VolumesItem | TitlesListItem,
+        item: ListsItem | TitlesItem | TitlesListItem,
         spider: Spider,
     ) -> None:
         """Process item and save to database with retry logic.
 
         Args:
-            item: The item to be processed (ListsItem, TitlesItem, VolumesItem, or TitlesListItem).
+            item: The item to be processed (ListsItem, TitlesItem, or TitlesListItem).
             spider (Spider): The spider instance that is being processed.
 
         Returns:
@@ -101,12 +98,8 @@ class WhakoomWebscrapperPipeline:
                     self._process_lists_item(item, spider)
                 elif isinstance(item, TitlesItem):
                     self._process_titles_item(item, spider)
-                elif isinstance(item, VolumesItem):
-                    self._process_volumes_item(item, spider)
                 elif isinstance(item, TitlesListItem):
                     self._process_titles_list_item(item, spider)
-                else:
-                    raise DropItem(f"Unknown item type: {type(item)}")
 
                 return
 
@@ -128,7 +121,9 @@ class WhakoomWebscrapperPipeline:
                         status="failed",
                         error_message=str(e),
                     )
-                    raise DropItem(f"Failed to process item after {max_retries} attempts: {e}") from e
+                    raise DropItem(
+                        f"Failed to process item after {max_retries} attempts: {e}"
+                    ) from e
 
     def _process_lists_item(self, item: ListsItem, spider: Spider) -> None:
         """Process ListsItem and save to database.
@@ -158,7 +153,7 @@ class WhakoomWebscrapperPipeline:
         )
 
     def _process_titles_item(self, item: TitlesItem, spider: Spider) -> None:
-        """Process TitlesItem and save to database.
+        """Process TitlesItem and save to database with deduplication.
 
         Args:
             item (TitlesItem): The titles item to process.
@@ -173,7 +168,17 @@ class WhakoomWebscrapperPipeline:
             status="started",
         )
 
-        self.sql_manager.insert(TitlesItem, item)
+        self.sql_manager.execute_parametrized_query(
+            "INSERT_OR_IGNORE_TITLE",
+            (
+                item.title_id,
+                item.title,
+                item.url,
+                item.scrape_status,
+                item.scraped_at,
+                1 if item.is_single_volume else 0,
+            ),
+        )
 
         self.processed_title_ids.add(item.title_id)
 
@@ -181,33 +186,6 @@ class WhakoomWebscrapperPipeline:
             scrapper_name=spider.name,
             operation_type="title_processing",
             entity_id=item.title_id,
-            status="success",
-        )
-
-    def _process_volumes_item(self, item: VolumesItem, spider: Spider) -> None:
-        """Process VolumesItem and save to database.
-
-        Args:
-            item (VolumesItem): The volumes item to process.
-            spider (Spider): The spider instance.
-        """
-        logging.info("Processing volume (volume_id: %s)", item.volume_id)
-
-        self.sql_manager.log_scraping_operation(
-            scrapper_name=spider.name,
-            operation_type="volume_processing",
-            entity_id=item.volume_id,
-            status="started",
-        )
-
-        self.sql_manager.insert(VolumesItem, item)
-
-        self.processed_volume_ids.add(item.volume_id)
-
-        self.sql_manager.log_scraping_operation(
-            scrapper_name=spider.name,
-            operation_type="volume_processing",
-            entity_id=item.volume_id,
             status="success",
         )
 

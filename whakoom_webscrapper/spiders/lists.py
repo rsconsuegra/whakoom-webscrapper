@@ -36,20 +36,17 @@ class ListSpider(Spider):
         user_profile = parsed_url.path.split("/")[1] if parsed_url.path else ""
         self.logger.info("Scraping lists for user profile: %s", user_profile)
 
-        h3_tags = response.css("h3")
+        h3_tags = response.xpath('//*[@id="pp-lists"]/div/*/h3/a')
 
         for h3 in h3_tags:
-            parent_div = h3.xpath("parent::node()")
-            following_a_tags = parent_div.xpath(".//a")
+            list_title = str(h3.xpath("string()").get())
+            list_url = h3.attrib["href"]
+            list_id = int(list_url.rsplit("_", 1)[-1])
 
-            if len(following_a_tags) > 1:
-                list_title = following_a_tags[1].xpath("string()").extract_first().strip()
-                list_id = int(following_a_tags[1].attrib["href"].rsplit("_", 1)[-1])
-
-                yield ListsItem(
-                    list_id=list_id,
-                    title=list_title,
-                    url=following_a_tags[1].attrib["href"],
-                    user_profile=user_profile,
-                    scrape_status="pending",
-                )
+            yield ListsItem(
+                list_id=list_id,
+                title=list_title,
+                url=list_url,
+                user_profile=user_profile,
+                scrape_status="pending",
+            )

@@ -70,16 +70,18 @@ class TitlesItem:
     Attributes:
         title_id (int): The WhaKoom internal title ID.
         title (str): The title of manga.
+        url (str): The full URL from anchor tag.
         scrape_status (str): The scraping status (pending, in_progress, completed, failed).
         scraped_at (str | None): Timestamp when title was scraped.
-        title_url (str | None): The full URL from anchor tag.
+        is_single_volume (bool): Whether this title is a single volume/autoconclusive.
     """
 
     title_id: int
     title: str
-    title_url: str
+    url: str
     scrape_status: str = "pending"
     scraped_at: str | None = None
+    is_single_volume: bool = False
 
     table_name: str = "titles"
 
@@ -92,64 +94,10 @@ class TitlesItem:
         return (
             self.title_id,
             self.title,
+            self.url,
             self.scrape_status,
             self.scraped_at,
-            self.title_url,
-        )
-
-    def __getitem__(self, attr: str) -> str:
-        """Get value of specified attribute.
-
-        Args:
-            attr (str): The attribute name.
-
-        Returns:
-            The value of specified attribute.
-        """
-        return getattr(self, attr)
-
-
-@dataclass(kw_only=True)
-class VolumesItem:  # pylint: disable=too-many-instance-attributes
-    """Represents a scraped volume.
-
-    Attributes:
-        volume_id (int): The WhaKoom internal volume ID.
-        title_id (int): The internal ID of the parent title.
-        volume_number (int | None): The volume number.
-        title (str | None): The title of volume.
-        url (str | None): The URL of the volume page.
-        isbn (str | None): The ISBN of volume.
-        publisher (str | None): The publisher of volume.
-        year (int | None): The publication year.
-    """
-
-    volume_id: int
-    title_id: int
-    volume_number: int | None = None
-    title: str | None = None
-    url: str | None = None
-    isbn: str | None = None
-    publisher: str | None = None
-    year: int | None = None
-
-    table_name: str = "volumes"
-
-    def to_tuple(self) -> tuple:
-        """Convert model to tuple for parameterized queries.
-
-        Returns:
-            tuple: Model values as tuple.
-        """
-        return (
-            self.volume_id,
-            self.title_id,
-            self.volume_number,
-            self.title,
-            self.url,
-            self.isbn,
-            self.publisher,
-            self.year,
+            1 if self.is_single_volume else 0,
         )
 
     def __getitem__(self, attr: str) -> str:
@@ -418,7 +366,6 @@ class MigrationItem:
 __all__ = [
     "ListsItem",
     "TitlesItem",
-    "VolumesItem",
     "TitleMetadataItem",
     "TitleEnrichedItem",
     "TitlesListItem",

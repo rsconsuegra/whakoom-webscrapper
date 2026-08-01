@@ -1,5 +1,7 @@
 # INSERT_OR_IGNORE_TITLE
-INSERT INTO titles (title_id, title, url, scrape_status, scraped_at, is_single_volume)
+INSERT INTO titles (
+    title_id, title, url, scrape_status, scraped_at, is_single_volume
+)
 VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (title_id) DO NOTHING;
 

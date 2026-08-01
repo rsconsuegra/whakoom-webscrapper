@@ -91,9 +91,7 @@ class SQLManager:
         sanitized_query = self._sanitize_query(query)
         return sanitized_query.format(**params)
 
-    def execute_query(
-        self, query_name: str, params: dict[str, Any] | None = None
-    ) -> list[tuple[Any, ...]]:
+    def execute_query(self, query_name: str, params: dict[str, Any] | None = None) -> list[tuple[Any, ...]]:
         """Execute a named query with optional parameters.
 
         Args:
@@ -119,9 +117,7 @@ class SQLManager:
             conn.commit()
             return cursor.fetchall()
 
-    def execute_parametrized_query(
-        self, query_name: str, params: tuple[Any, ...]
-    ) -> list[tuple[Any, ...]]:
+    def execute_parametrized_query(self, query_name: str, params: tuple[Any, ...]) -> list[tuple[Any, ...]]:
         """Execute a named query with positional parameters.
 
         Args:
@@ -249,9 +245,7 @@ class SQLManager:
             with open(file_path, encoding="utf-8") as file:
                 sql_content = file.read()
 
-            up_match = re.search(
-                r"--\s*Up\s*\n(.*?)(?=\n--.*Down|$)", sql_content, re.DOTALL
-            )
+            up_match = re.search(r"--\s*Up\s*\n(.*?)(?=\n--.*Down|$)", sql_content, re.DOTALL)
             if up_match:
                 up_script = up_match.group(1).strip()
 
@@ -301,13 +295,9 @@ class SQLManager:
         to_tuple_method = getattr(instance, "to_tuple", None)
 
         if not table:
-            raise ValueError(
-                f"Model {model_class.__name__} has no 'table_name' attribute"
-            )
+            raise ValueError(f"Model {model_class.__name__} has no 'table_name' attribute")
         if to_tuple_method is None:
-            raise ValueError(
-                f"Instance of {model_class.__name__} has no 'to_tuple()' method"
-            )
+            raise ValueError(f"Instance of {model_class.__name__} has no 'to_tuple()' method")
 
         model_fields = [f.name for f in fields(model_class) if f.name != "table_name"]
         placeholders = ", ".join(["?"] * len(model_fields))
@@ -318,9 +308,7 @@ class SQLManager:
 
         self._execute_raw(query, params)
 
-    def update(
-        self, model_class: type[Any], instance: Any, id_field: str, id_value: int | str
-    ) -> None:
+    def update(self, model_class: type[Any], instance: Any, id_field: str, id_value: int | str) -> None:
         """Update a model instance in database.
 
         Args:
@@ -339,15 +327,9 @@ class SQLManager:
         table = getattr(model_class, "table_name", "")
 
         if not table:
-            raise ValueError(
-                f"Model {model_class.__name__} has no 'table_name' attribute"
-            )
+            raise ValueError(f"Model {model_class.__name__} has no 'table_name' attribute")
 
-        model_fields = [
-            f.name
-            for f in fields(model_class)
-            if f.name not in ["table_name", id_field]
-        ]
+        model_fields = [f.name for f in fields(model_class) if f.name not in ["table_name", id_field]]
         set_clause = ", ".join([f"{field} = ?" for field in model_fields])
         query = f"UPDATE {table} SET {set_clause} WHERE {id_field} = ?"
 
@@ -394,9 +376,7 @@ class SQLManager:
         query = f"UPDATE {table} SET {field_name} = ? WHERE {id_field} = ?"
         self._execute_raw(query, (field_value, id_value))
 
-    def select_by_id(
-        self, table: str, id_field: str, id_value: int | str
-    ) -> list[dict[str, Any]]:
+    def select_by_id(self, table: str, id_field: str, id_value: int | str) -> list[dict[str, Any]]:
         """Select a record from table by ID field.
 
         Args:

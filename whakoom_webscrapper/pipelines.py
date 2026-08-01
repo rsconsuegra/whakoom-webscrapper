@@ -29,7 +29,6 @@ class WhakoomWebscrapperPipeline:
             sql_dir=str(queries_dir),
             migrations_dir=str(migrations_dir),
         )
-        self.processed_list_ids: set[int] = set()
         self.processed_title_ids: set[int] = set()
         self.processed_relationship_ids: set[tuple[int, int]] = set()
 
@@ -51,7 +50,7 @@ class WhakoomWebscrapperPipeline:
         logging.info("Migrations applied and spider started for: %s", spider.name)
 
     def close_spider(self, spider: Spider) -> None:
-        """Log completion and update statuses on spider completion.
+        """Log completion on spider completion.
 
         Args:
             spider (Spider): The spider instance that is being closed.
@@ -62,13 +61,6 @@ class WhakoomWebscrapperPipeline:
             entity_id=0,
             status="success",
         )
-
-        if spider.name == "publications":
-            for list_id in self.processed_list_ids:
-                self.sql_manager.execute_parametrized_query(
-                    "UPDATE_LIST_STATUS", ("completed", list_id)
-                )
-                logging.info("Updated list_id %s status to completed", list_id)
 
         logging.info("Spider finished for: %s", spider.name)
 
@@ -121,9 +113,7 @@ class WhakoomWebscrapperPipeline:
                         status="failed",
                         error_message=str(e),
                     )
-                    raise DropItem(
-                        f"Failed to process item after {max_retries} attempts: {e}"
-                    ) from e
+                    raise DropItem(f"Failed to process item after {max_retries} attempts: {e}") from e
 
     def _process_lists_item(self, item: ListsItem, spider: Spider) -> None:
         """Process ListsItem and save to database.
@@ -142,8 +132,6 @@ class WhakoomWebscrapperPipeline:
         )
 
         self.sql_manager.insert(ListsItem, item)
-
-        self.processed_list_ids.add(item.list_id)
 
         self.sql_manager.log_scraping_operation(
             scrapper_name=spider.name,
@@ -179,6 +167,8 @@ class WhakoomWebscrapperPipeline:
                 1 if item.is_single_volume else 0,
             ),
         )
+
+        self.sql_manager.execute_parametrized_query("UPDATE_TITLE_STATUS", ("completed", item.title_id))
 
         self.processed_title_ids.add(item.title_id)
 

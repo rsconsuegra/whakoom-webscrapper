@@ -1,8 +1,9 @@
 """Spider to get all the titles in a list."""
 
 from collections.abc import Iterator
-from typing import Any
 from logging import WARNING
+from pathlib import Path
+from typing import Any
 
 from scrapy import Request, Selector, Spider
 from scrapy.http import Response
@@ -10,16 +11,13 @@ from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.remote_connection import LOGGER
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.remote.remote_connection import LOGGER
-
-from pathlib import Path
+from urllib3.connectionpool import log as urllibLogger
 
 from whakoom_webscrapper.models import TitlesItem, TitlesListItem
 from whakoom_webscrapper.sqlmanager import SQLManager
-
-from urllib3.connectionpool import log as urllibLogger
 
 # This removes unwanted logs from Selenium process.
 LOGGER.setLevel(WARNING)
@@ -55,7 +53,9 @@ class PublicationsSpider(Spider):
             migrations_dir=str(migrations_dir),
         )
 
+        self.started_list_ids: set[int] = set()
         self.processed_list_ids: set[int] = set()
+        self.failed_list_ids: set[int] = set()
 
     def _init_driver(self) -> webdriver.Chrome:
         """Initialize and return Chrome WebDriver with proper options.
@@ -79,9 +79,7 @@ class PublicationsSpider(Spider):
             list: List of dictionaries with list data.
         """
         if self.mode == "pending":
-            results = self.sql_manager.execute_parametrized_query(
-                "GET_LISTS_FOR_PROCESSING", ("pending",)
-            )
+            results = self.sql_manager.execute_parametrized_query("GET_LISTS_FOR_PROCESSING", ("pending",))
         else:
             results = self.sql_manager.execute_parametrized_query("GET_ALL_LISTS", ())
 
@@ -136,46 +134,33 @@ class PublicationsSpider(Spider):
         """
         list_xpath = '//*[@id="list"]/h1/'
 
-        user_profile = response.xpath(
-            '//*[@id="list"]/div[1]/p[2]/span[1]/strong/a/text()'
-        ).get()
+        user_profile = response.xpath('//*[@id="list"]/div[1]/p[2]/span[1]/strong/a/text()').get()
         list_name = response.xpath(f"{list_xpath}span/text()").get()
         list_amount = response.xpath(f"{list_xpath}small/text()").get()
 
-        self.logger.info(
-            f"Scraping list '{list_name}' by user '{user_profile}' with {list_amount}."
-        )
+        self.logger.info(f"Scraping list '{list_name}' by user '{user_profile}' with {list_amount}.")
 
         db_list_id = response.meta["db_id"]
-        whakoom_list_id = response.meta["list_id"]
 
-        self.sql_manager.update_single_field(
-            "lists", "id", db_list_id, "scrape_status", "in_progress"
-        )
+        self.sql_manager.update_single_field("lists", "id", db_list_id, "scrape_status", "in_progress")
+
+        self.started_list_ids.add(db_list_id)
 
         if self.driver is None:
             self.driver = self._init_driver()
-            self.logger.info(
-                "ChromeDriver initialized successfully. Loading url. %s", response.url
-            )
+            self.logger.info("ChromeDriver initialized successfully. Loading url. %s", response.url)
         self.driver.get(response.url)
 
         while True:
             try:
-                load_more_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "loadmoreissues"))
-                )
+                load_more_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.ID, "loadmoreissues")))
                 load_more_button.click()
 
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "list__item"))
-                )
+                WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "list__item")))
             except TimeoutException:
-                self.logger.info(
-                    "Selenium found no more clickable elements. Stopping pagination"
-                )
+                self.logger.info("Selenium found no more clickable elements. Stopping pagination")
                 break
-            except Exception as e:
+            except Exception as e:  # pylint: disable=W0718
                 self.logger.error(
                     "Selenium encountered an Exception: %s (%s)",
                     e,
@@ -191,15 +176,14 @@ class PublicationsSpider(Spider):
         titles = response_.xpath('//span[@class="title"]/a')
 
         for idx, title in enumerate(titles, start=1):
-            volume_name = title.xpath("text()").get()
             volume_url = title.attrib.get("href", "")
 
             yield Request(
                 url=f"https://www.whakoom.com{volume_url}",
                 meta={
                     "volume_url": volume_url,
-                    "volume_name": volume_name,
-                    "list_id": whakoom_list_id,
+                    "volume_name": title.xpath("text()").get(),
+                    "list_id": response.meta["list_id"],
                     "db_list_id": db_list_id,
                     "position": idx,
                 },
@@ -220,20 +204,10 @@ class PublicationsSpider(Spider):
         if request == response.url:
             return False
 
-        request_path = (
-            request.split("whakoom.com")[-1]
-            if "whakoom.com" in request
-            else request
-        )
-        response_path = (
-            response.url.split("whakoom.com")[-1]
-            if "whakoom.com" in response.url
-            else response.url
-        )
+        request_path = request.split("whakoom.com")[-1] if "whakoom.com" in request else request
+        response_path = response.url.split("whakoom.com")[-1] if "whakoom.com" in response.url else response.url
 
-        return request_path.startswith("/comics/") and response_path.startswith(
-            "/ediciones/"
-        )
+        return request_path.startswith("/comics/") and response_path.startswith("/ediciones/")
 
     def parse_volume_page(self, response: Response) -> Iterator:
         """Parse volume page to extract title information.
@@ -262,35 +236,27 @@ class PublicationsSpider(Spider):
             title_id = self._extract_title_id_from_url(response.url)
             title_url = response.url
         else:
-            title_url = response.xpath('//*[@id="content"]/div/div/p[1]/a').attrib.get(
-                "href", ""
-            )
+            title_url = response.xpath('//*[@id="content"]/div/div/p[1]/a').attrib.get("href", "")
             title_id = self._extract_title_id_from_url(title_url)
 
         try:
             yield TitlesItem(
                 title_id=title_id,
-                url=title_url if is_single_volume else f"https://www.whakoom.com{title_url}",
+                url=(title_url if is_single_volume else f"https://www.whakoom.com{title_url}"),
                 title=volume_name,
                 scrape_status="pending",
                 is_single_volume=is_single_volume,
             )
 
-            yield TitlesListItem(
-                list_id=db_list_id, title_id=title_id, position=position
-            )
+            yield TitlesListItem(list_id=db_list_id, title_id=title_id, position=position)
 
-            self.logger.info(
-                f"Processed title: {volume_name} (title_id={title_id}, is_single_volume={is_single_volume})"
-            )
+            self.logger.info(f"Processed title: {volume_name} (title_id={title_id}, is_single_volume={is_single_volume})")
 
             self.processed_list_ids.add(db_list_id)
 
         except ValueError as e:
             self.logger.error("Failed to extract IDs for URLs %s: %s", title_url, e)
-            self.sql_manager.update_single_field(
-                "lists", "id", db_list_id, "scrape_status", "failed"
-            )
+            self.sql_manager.update_single_field("lists", "id", db_list_id, "scrape_status", "failed")
             self.sql_manager.log_scraping_operation(
                 scrapper_name=self.name,
                 operation_type="title_processing",
@@ -324,18 +290,24 @@ class PublicationsSpider(Spider):
         Args:
             failure: The failure object.
         """
-        list_id = failure.request.meta["list_id"]
+        db_list_id = failure.request.meta["db_id"]
+        whakoom_list_id = failure.request.meta["list_id"]
 
-        self.logger.error("Request failed for list_id %s: %s", list_id, failure)
-
-        self.sql_manager.update_single_field(
-            "lists", "list_id", list_id, "scrape_status", "failed"
+        self.logger.error(
+            "Request failed for db_list_id %s (whakoom_id: %s): %s",
+            db_list_id,
+            whakoom_list_id,
+            failure,
         )
+
+        self.failed_list_ids.add(db_list_id)
+
+        self.sql_manager.update_single_field("lists", "id", db_list_id, "scrape_status", "failed")
 
         self.sql_manager.log_scraping_operation(
             scrapper_name=self.name,
             operation_type="list_processing",
-            entity_id=list_id,
+            entity_id=db_list_id,
             status="failed",
             error_message=str(failure),
         )
@@ -358,11 +330,26 @@ class PublicationsSpider(Spider):
             error_message=str(failure),
         )
 
-    def close_spider(self, spider: Spider) -> None:
-        """Update list statuses to 'completed' and cleanup resources."""
+    def close_spider(self, spider: Spider) -> None:  # pylint: disable=unused-argument
+        """Update list statuses to 'completed' and cleanup resources.
+
+        Completion strategy:
+        - Failed lists: Keep status as "failed"
+        - Lists in processed_list_ids: Successfully processed all items → "completed"
+        - Lists in started_list_ids but not processed/failed: Partial success → "completed"
+        """
+        completed_lists = self.started_list_ids - self.failed_list_ids
+
         for db_list_id in self.processed_list_ids:
-            self.sql_manager.update_single_field(
-                "lists", "id", db_list_id, "scrape_status", "completed"
+            self.sql_manager.update_single_field("lists", "id", db_list_id, "scrape_status", "completed")
+            self.logger.info("Marked list_id %s as completed (full success)", db_list_id)
+
+        partially_completed = completed_lists - self.processed_list_ids
+        for db_list_id in partially_completed:
+            self.sql_manager.update_single_field("lists", "id", db_list_id, "scrape_status", "completed")
+            self.logger.info(
+                "Marked list_id %s as completed (partial success)",
+                db_list_id,
             )
 
         if self.driver is not None:

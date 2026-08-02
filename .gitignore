@@ -56,3 +56,14 @@ databases
 venv
 .mypy_cache
 .ruff_cache
+.zcode
+plans
+.opencode
+.agents
+
+# V2 runtime data
+.env
+data/raw/
+data/exports/
+data/*.db
+*.egg-info

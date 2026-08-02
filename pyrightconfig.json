@@ -1,4 +1,9 @@
 {
   "venvPath": ".",
-  "venv": ".venv"
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "standard",
+  "reportMissingTypeStubs": "warning",
+  "include": ["whakoom_scraper", "whakoom_webscrapper"],
+  "exclude": [".venv", ".mypy_cache", ".ruff_cache", "databases", "docs", ".opencode", "data"]
 }

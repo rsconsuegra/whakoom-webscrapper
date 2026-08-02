@@ -1,17 +1,26 @@
-# AI Agent Guidelines — Whakoom Scraper
+# AI Agent Guidelines — Whakoom Scraper V2
 
 ## 1. Project Context
 
-This is a **Python 3.12 web scraping project** built with **Scrapy** to extract manga collection data from Whakoom user profiles. This is inteded as a hobby yet mantainable project with best practices.
+This is a **Python 3.13 web scraping project** that extracts manga collection data from
+Whakoom user profiles through a plain-Python, sync-first httpx pipeline. It is a
+hobby project with maintainability best practices: layering, determinism, and no slope.
+
+The legacy `whakoom_webscrapper/` package (Scrapy + Selenium) is **frozen reference
+material**: never wired in, never deleted — mine it for selectors/endpoint knowledge only.
 
 **Core stack:**
 
-* Python **3.12**
-* Scrapy **2.11+**
-* SQLite (local persistence)
-* Dataclasses for items
-* SQL migrations for schema evolution
+* Python **3.13** (pinned in `.python-version`; `requires-python` stays `>=3.12`)
+* httpx + tenacity (HTTP, retries), parsel (HTML parsing)
+* SQLite (local persistence) behind a custom `store/` layer
+* DuckDB (read-only analytics/export via the SQLite extension)
+* Dataclasses for domain items
+* SQL migrations for schema evolution (forward-only)
 * `uv` for **all** dependency and command execution
+
+Design authority is `V2.md`; implementation tracking is `phases.md`; architectural
+decisions live in `docs/adr/` (accepted ADRs are never edited in place).
 
 This file defines **non-negotiable rules** for AI agents and contributors.
 
@@ -48,22 +57,29 @@ These rules override all others.
 # Dependency sync
 uv sync
 
-# Scrapy
-uv run scrapy crawl lists
-uv run scrapy crawl lists --loglevel=DEBUG
+# CLI stages
+uv run wk lists [--reset]
+uv run wk list-detail [--list-id N | --all]
+uv run wk resolve [--limit N]
+uv run wk series [--force] [--limit N]
+uv run wk validate
+uv run wk analyze [--force]
+uv run wk run-all
 
-# Quality tools
-uv run ruff check whakoom_webscrapper/
-uv run black whakoom_webscrapper/
-uv run bandit -r whakoom_webscrapper/
+# Quality gates (every phase)
+uv run pytest
+uv run ruff check .
+uv run mypy .
+uv run bandit -c pyproject.toml -r whakoom_scraper/
 uv run pre-commit run --all-files
 ```
 
-🚫 Never use `pip`, `scrapy`, `ruff`, `black`, or `bandit` directly.
+🚫 Never use `pip`, `scrapy`, `httpx`, `ruff`, `mypy`, `bandit`, `black`, or `pre-commit`
+directly.
 
 ---
 
-## 4. Python 3.12 Coding Standards
+## 4. Python 3.13 Coding Standards
 
 ### Typing (MANDATORY)
 
@@ -87,23 +103,22 @@ def process_item(item): ...
 
 ---
 
-### Dataclasses & Items
+### Dataclasses & Domain Models
 
-* All items **must** be dataclasses
-* `kw_only=True` is required
-* Items must support `__getitem__`
+* All domain models **must** be dataclasses with `kw_only=True`
+* All models live in `whakoom_scraper/domain.py`
+* External identifiers carry a `whakoom_*` prefix; surrogate DB `id`s never cross namespaces
 
 ```python
 @dataclass(kw_only=True)
-class ListsItem:
-    list_id: int
-    title: str
-
-    def __getitem__(self, attr: str):
-        return getattr(self, attr)
+class Series:
+    whakoom_series_id: int
+    slug: str
+    url: str
+    name: str | None = None
 ```
 
-🚫 Plain dictionaries are not allowed for items.
+🚫 Plain dictionaries are not allowed as items or results.
 
 ---
 
@@ -152,32 +167,35 @@ Example:
 
 ### SQL Access
 
-* **ALWAYS** use `SQLManager`
-* **NEVER** use raw SQLite connections
-* **NEVER** write inline SQL
+* **ALWAYS** go through `whakoom_scraper.store.db.Database`
+* **NEVER** open raw SQLite connections outside the store layer
+* **NEVER** write inline SQL in application code
+* Query parameters **must** use `?` placeholders
 
 ```python
-sql_manager.execute_parametrized_query("INSERT_OR_UPDATE_LISTS", params)
+db.execute("lists", "upsert_list", (list_.whakoom_list_id, list_.name))
+db.fetchone("series", "get_series", (whakoom_series_id,))
 ```
-
----
-
-### Queries
-
-* All SQL must live in `queries/`
-* Queries are referenced **by name**
-* Parameters **must** use `?` placeholders
 
 🚫 String interpolation in SQL is forbidden.
 
 ---
 
+### Named Queries
+
+* All SQL lives in `whakoom_scraper/store/queries/*.sql`
+* Queries are referenced by `-- name:` marker: `db.execute(<file_stem>, <query_name>, params)`
+* Repository functions in `store/repositories.py` own all DB access for stages
+* Repos **never commit** — the calling stage owns the transaction boundary
+
+---
+
 ### Migrations
 
-* Location: `migrations/`
-* Naming: `XXX_description.sql`
-* Must be idempotent
-* Must include **UP and DOWN** sections
+* Location: `whakoom_scraper/store/migrations/`
+* Naming: `NNN_description.sql`
+* Applied once, in filename order, tracked in the `_migrations` table
+* **Forward-only** (no UP/DOWN sections; destructive changes dump → rebuild → reload)
 
 ---
 
@@ -190,38 +208,43 @@ A manga title may appear in multiple lists.
 **Requirements:**
 
 * Titles must be scraped **once**
-* Use stable identifiers (e.g. Whakoom title ID)
-* Enforce uniqueness at the database level
+* Use stable identifiers (Whakoom series/list ids, volume slugs)
+* Enforce uniqueness at the database level (`UNIQUE` + `ON CONFLICT`)
 
 Failure to deduplicate is a **hard bug**.
 
 ---
 
-### Spider Design
+### Stage Design
 
-* **One spider = one responsibility**
+* **One stage = one responsibility**
 * No mixed concerns
 
-```python
-ListSpider   → lists only
-TitleSpider  → titles only
-VolumeSpider → volumes only
+```text
+lists        → list cards only
+list-detail  → list items + per-list reconciliation
+resolve      → volume slug → series (authenticated, name-aware)
+series       → full series data + observation history
 ```
+
+* `list-detail` **reconciles** per list (`replace_list_items`): latest fetched version
+  wins, stale rows deleted, resolved `series_id` links preserved. On any delta: log a
+  WARNING and record it in `scrape_runs.notes`, then proceed.
 
 ---
 
-### Pipelines & Error Handling
+### Error Handling
 
 * No silent failures
 * Always log errors
-* Retry transient failures (max 3 attempts, exponential backoff)
+* Retry transient failures (max 3 attempts, exponential backoff) — handled by `WhakoomSession`
 
 ---
 
 ### Logging
 
-* Log to console **and** `scraping_log` table
-* Use descriptive `scrapper_name`
+* Log to console **and** record stage outcomes in the `scrape_runs` table
+* Session expiry aborts `resolve` with exit code `3` (loud, resumable)
 
 ---
 
@@ -229,23 +252,24 @@ VolumeSpider → volumes only
 
 * Unit tests for:
 
-  * Items
-  * Pipelines
-  * Deduplication logic
+  * Domain models
+  * Store layer (query loader, migrations, repositories)
+  * Parsers (`scrapers/`) against snapshot fixtures
+  * HTTP layer (retries, redirects, robots, archive) via `httpx.MockTransport`
 * Integration tests for:
 
-  * Spider → DB flow
+  * Stage → DB flow over `MockTransport` + a temp SQLite file
 
-Database-impacting changes must be tested.
+Database-impacting changes must be tested. All tests run **offline**.
 
 ---
 
 ## 8. Security Rules
 
 * No secrets in code
-* No credentials in repo
-* Environment variables only
-* SQL injection prevention is mandatory
+* No credentials in repo (`cookies.txt`, `.env` are gitignored)
+* Environment variables only (see `.env.example`)
+* SQL injection prevention is mandatory (`?` placeholders only)
 
 ---
 
@@ -253,22 +277,21 @@ Database-impacting changes must be tested.
 
 ### Git Rules
 
-* Branches should be names `feature/description` or `fix/description`
-* Always check in which branch you currently are before staging and/or commiting changes. If you are not in the correct branch, create a new branch from the correct base.
+* Branches should be named `feature/description` or `fix/description`
+* Always check in which branch you currently are before staging and/or committing changes. If you are not in the correct branch, create a new branch from the correct base.
 * Never commit to `main` or `develop` directly
-* Never use Reset --Hard unless explicitly ordered
+* Never use `Reset --Hard` unless explicitly ordered
 * Never use force push unless explicitly ordered
 * Never commit changes without asking the user first
-
 
 ### Commit Format
 
 Use **Conventional Commits**:
 
 ```text
-feat: add title spider
-fix: prevent duplicate title inserts
-docs: update AGENTS.md
+feat: add stage-1 lists pipeline
+fix: reconcile list items instead of upserting
+docs: update AGENTS.md to V2
 ```
 
 ### Push Checklist (only if ordered)
@@ -277,17 +300,30 @@ docs: update AGENTS.md
 2. Review `git diff`
 3. Update README if behavior or scope changed
 4. Push
+
 ---
 
-## 10. Summary Checklist (Agent Self-Audit)
+## 10. Code Search & Retrieval Routing
+
+Route retrieval by cost; escalate only when the cheaper layer can't deliver.
+
+* **Layer 1 — Text (default):** use the **Grep** and **Glob** tools. Drop to **Bash** `rg` only for per-file counts (`rg -c`), piping into `xargs`, or regex the Grep tool can't express.
+* **Layer 2 — Structural / rewrite:** for AST-safe renames, matching code while ignoring strings/comments, or relational queries (`has`/`inside`/`not`) → load the **`code-search`** skill (`ast-grep`/`sg`). **Never** `rg` + `sed` for rewrites (corrupts strings/comments).
+* **Layer 3 — Symbol:** for precise renames, go-to-definition, find-references, and type diagnostics on Python → rely on **pyright LSP** diagnostics (wired in `opencode.json`).
+
+For the full layered funnel, decision tables, and ast-grep recipes, load the `code-search` skill.
+
+---
+
+## 11. Summary Checklist (Agent Self-Audit)
 
 Before stopping work, ensure:
 
-* [ ] Python 3.12 syntax only
+* [ ] Python 3.13 syntax only
 * [ ] Full typing coverage
 * [ ] Google-style docstrings
 * [ ] `uv run` used everywhere
-* [ ] SQLManager + named queries only
+* [ ] `Database` + named queries only (no raw SQL, no inline SQL)
 * [ ] Deduplication enforced
 * [ ] Errors logged
 * [ ] Tests updated if DB logic changed

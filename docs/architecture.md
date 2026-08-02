@@ -1,460 +1,447 @@
-# Architecture Overview
+# Architecture (V2)
 
-High-level system architecture and design decisions for Whakoom Manga Lists Scraper.
+System overview of the V2 Whakoom scraper (`whakoom_scraper/`): a plain-Python, sync-first `httpx`
+pipeline that extracts manga-collection data from curated Whakoom user lists into a local SQLite store.
 
----
+> **Scope of this document.** It describes **what is built today** (P0 scaffold/config/CLI, P1 store, P2
+> HTTP layer, and the `resolve` parser) plus **what is immediately next** (the three public parsers of
+> Phase 3). Later phases are tracked in [`../phases.md`](../phases.md) and are intentionally not detailed
+> here. See [`README.md`](README.md) for the build-status table.
 
-## Project Goals
+## 1. High-level components
 
-The Whakoom Manga Lists Scraper aims to:
-
-1. **Extract manga collection data** from Whakoom user profiles
-2. **Track scraping progress** with status fields and timestamps
-3. **Deduplicate titles** across multiple lists (one title per series)
-4. **Store structured data** in SQLite database with migration support
-5. **Support incremental scraping** - only scrape new/updated data
-6. **Enable analysis** - collected data supports statistical analysis, NLP, and semantic analysis
-
-### Non-Goals
-
-- No authentication or login functionality
-- No scraping of private lists
-- No API usage (HTML scraping only)
-- No web UI or REST API layer
-- No real-time processing (batch processing only)
-
----
-
-## System Architecture
-
-### High-Level Components
+The system is layered: the CLI dispatches to pipeline **stages**, which orchestrate **scrapers** (pure
+parsers + the I/O-bound resolver), an **HTTP layer**, and a **store**. Each layer depends only on the layer
+below it; SQL never leaves the store, and I/O never leaves the HTTP layer / resolver.
 
 ```mermaid
 graph TB
-    subgraph "User Layer"
-        U[User / AI Agent]
+    subgraph CLI["CLI (Typer) — cli.py"]
+        WK["wk &lt;stage&gt;"]
     end
 
-    subgraph "Spider Layer"
-        LS[List Spider]
-        PS[Publications Spider]
-        TS[Title Spider - Future]
+    subgraph Pipeline["pipeline/ (stages — planned P4+)"]
+        S1["stage_lists"]
+        S2["stage_list_detail"]
+        S3["stage_resolve"]
+        S4["stage_series"]
     end
 
-    subgraph "Pipeline Layer"
-        WP[WhakoomWebscrapper Pipeline]
+    subgraph Scrapers["scrapers/"]
+        RS["resolve.py ✅"]
+        PL["lists_index.py ⏳"]
+        PD["list_detail.py ⏳"]
+        PS["series_page.py ⏳"]
     end
 
-    subgraph "Database Layer"
-        SM[SQLManager]
-        SQ[Named Queries]
-        MG[Migrations]
-        DB[(SQLite DB)]
+    subgraph HTTP["http/ ✅"]
+        SESS["session.WhakoomSession"]
+        POL["policy.RobotsPolicy"]
+        ARCH["archive.save_raw"]
     end
 
-    subgraph "Data Layer"
-        LISTS[lists table]
-        TITLES[titles table]
-        VOLUMES[volumes table]
-        LT[lists_titles junction]
-        TM[title_metadata]
-        TE[title_enriched]
-        LOG[scraping_log]
-        MIG[migrations table]
+    subgraph Store["store/ ✅"]
+        DB["db.Database"]
+        REPO["repositories"]
+        Q["queries/*.sql"]
+        MIG["migrations/*.sql"]
     end
 
-    U --> LS
-    U --> PS
-    U --> TS
-    LS --> WP
-    PS --> WP
-    TS --> WP
-    WP --> SM
-    SM --> SQ
-    SM --> MG
-    SM --> DB
-    DB --> LISTS
-    DB --> TITLES
-    DB --> VOLUMES
-    DB --> LT
-    DB --> TM
-    DB --> TE
-    DB --> LOG
+    DBFILE[("SQLite<br/>data/whakoom.db")]
+    RAW[("data/raw/<br/>*.html.gz")]
+    SITE["whakoom.com"]
+
+    WK --> S1 & S2 & S3 & S4
+    S1 & S2 & S4 --> PL & PD & PS
+    S3 --> RS
+    PL & PD & PS -. "pure: text→dataclass" .- Scrapers
+    RS --> SESS
+    S1 & S2 & S3 & S4 --> POL
+    S1 & S2 & S3 & S4 --> SESS
+    SESS --> SITE
+    S1 & S2 & S3 & S4 --> ARCH
+    ARCH --> RAW
+    S1 & S2 & S3 & S4 --> REPO
+    REPO --> DB
+    DB --> Q
     DB --> MIG
+    DB --> DBFILE
+
+    CFG["config.Settings ✅"] -.-> WK & Pipeline & HTTP & Store
 ```
 
-### Data Flow
+**Layers and their rules**
+
+| Layer | Responsibility | Rule |
+|---|---|---|
+| `cli` | Parse args, dispatch to a stage, return exit code | No business logic |
+| `pipeline` | Orchestrate one stage: robots → fetch → parse → persist | Owns the transaction boundary (commit) |
+| `scrapers` | Pure parsers (text → dataclass) + the I/O resolver | No DB access; no SQL |
+| `http` | One client, politeness, retry, robots, raw archive | No SQL; the only network boundary |
+| `store` | SQLite, named queries, migrations, repositories | No network; the only SQL boundary |
+
+## 2. Request lifecycle (public stage)
+
+Every public request goes through robots, the polite+retrying session, the raw archive, and a repository
+before the stage commits. The HTTP-side behavior (robots, politeness, retry, `TransientRequestError`) is
+**built** (P2); the stage orchestration (archive write + repository + commit) is the **planned** P4 shape
+and is shown here to illustrate how the built pieces compose.
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant S as Spider
-    participant P as Pipeline
-    participant SM as SQLManager
-    participant Q as Named Queries
-    participant DB as Database
+    autonumber
+    participant Stage as stage (P4)
+    participant R as RobotsPolicy
+    participant W as WhakoomSession
+    participant T as tenacity retry
+    participant Net as whakoom.com
+    participant A as archive.save_raw
+    participant Repo as repositories
+    participant DB as SQLite
 
-    U->>S: Run spider (uv run scrapy crawl)
-    S->>DB: Query pending lists
-    S->>S: Parse HTML / Selenium
-    S->>P: Yield Item (ListsItem/TitlesItem/VolumesItem)
-    P->>SM: Log operation (started)
-    SM->>DB: INSERT into scraping_log
-    P->>SM: Execute named query
-    SM->>Q: Load query file
-    SM->>DB: Execute with parameters
-    DB-->>SM: Results
-    SM-->>P: Success
-    P->>SM: Log operation (success)
-    SM->>DB: INSERT into scraping_log
-    P-->>S: Item processed
-    S->>P: Yield next item
-    Note over S,DB: Repeat for all items
-    S->>P: Spider close event
-    P->>SM: Update list status to 'completed'
-    SM->>DB: UPDATE lists
-    P->>SM: Log spider finished
-    SM->>DB: INSERT into scraping_log
+    Stage->>R: is_allowed(path)
+    R-->>Stage: True (public path)
+    Stage->>W: get(path)
+    W->>W: polite sleep = delay + U(0, jitter)
+    loop attempt (max_retries total)
+        W->>T: request
+        T->>Net: GET
+        Net-->>T: response
+        alt 429 / 5xx
+            T->>T: raise TransientRequestError → backoff → retry
+        else Timeout / ConnectError
+            T->>T: backoff → retry
+        else 2xx / 3xx / 4xx (non-429)
+            T-->>W: response (returned immediately)
+        end
+    end
+    W-->>Stage: response
+    Stage->>A: save_raw(raw_dir, stage, url, content)
+    Stage->>Repo: upsert_*(...)
+    Stage->>DB: commit()
 ```
 
----
+> On retry exhaustion the session **raises** `TransientRequestError` (see
+> [ADR-0006](adr/0006-http-retry-and-transient-error-contract.md)); the stage surfaces it as a loud failure
+> rather than a silent 503.
 
-## Components
+## 3. Data model (database ERD)
 
-### Spiders Layer
+Ten tables, defined forward-only in
+[`001_initial_schema.sql`](../whakoom_scraper/store/migrations/001_initial_schema.sql). Surrogate `id`
+primary keys never leave the store; external identifiers always carry the `whakoom_` prefix. Foreign keys
+are enforced (`PRAGMA foreign_keys = ON`); `series_authors` is the series↔author junction.
 
-**Location:** `whakoom_webscrapper/spiders/`
+```mermaid
+erDiagram
+    publishers ||--o{ series : "publishes"
+    series ||--o{ volumes : "has"
+    series ||--o{ series_observations : "observed in"
+    series ||--o{ series_authors : "written by"
+    authors ||--o{ series_authors : "contributes to"
+    lists ||--o{ list_items : "contains"
+    series ||--o{ list_items : "resolved to (nullable)"
+    scrape_runs ||--o{ series_observations : "records"
 
-Spiders are Scrapy spider classes that parse HTML and yield data items.
-
-#### ListSpider (`lists.py`)
-- **Purpose:** Scrape all lists from a Whakoom user profile
-- **Input:** User profile URL (e.g., `https://www.whakoom.com/deirdre/lists/`)
-- **Output:** ListsItem instances
-- **Database Target:** `lists` table
-- **Selenium:** No (uses Scrapy only)
-
-#### PublicationsSpider (`publications.py`)
-- **Purpose:** Process lists to extract volumes and titles
-- **Input:** Lists from database (read by mode parameter)
-- **Output:** VolumesItem, TitlesItem, TitlesListItem instances
-- **Database Targets:** `volumes`, `titles`, `lists_titles` tables
-- **Selenium:** Yes (for dynamic content loading)
-
-#### TitleSpider (Future - `titles.py`)
-- **Purpose:** Scrape detailed title metadata
-- **Input:** Titles from database where `scrape_status='pending'`
-- **Output:** TitleMetadataItem instances
-- **Database Target:** `title_metadata` table
-- **Selenium:** TBD
-
-### Pipeline Layer
-
-**Location:** `whakoom_webscrapper/pipelines.py`
-
-The pipeline is a Scrapy item pipeline that processes items yielded by spiders.
-
-#### WhakoomWebscrapperPipeline
-
-**Responsibilities:**
-1. **Initialize database** - Applies migrations on spider start
-2. **Process items** - Handles ListsItem, TitlesItem, VolumesItem, TitlesListItem
-3. **Retry logic** - 3 attempts with exponential backoff (1s, 2s, 4s)
-4. **Log operations** - All operations logged to `scraping_log` table
-5. **Update statuses** - Marks lists as 'completed' on spider close
-
-**Error Handling:**
-- Logs all errors to `scraping_log` table
-- Raises `DropItem` after 3 failed retries
-- Preserves partial progress on failure
-
-### Database Layer
-
-#### SQLManager
-
-**Location:** `whakoom_webscrapper/sqlmanager.py`
-
-A lightweight ORM-like manager that provides type-safe database operations.
-
-**Features:**
-- **Named queries** - Loads SQL queries from `.sql` files
-- **Parameterized queries** - All queries use `?` placeholders (SQL injection safe)
-- **ORM-like methods** - `insert()`, `update()`, `update_single_field()`, `select_by_id()`
-- **Migration system** - Automatic application of pending migrations
-- **Logging** - Built-in scraping operation logging
-
-**Design Principles:**
-- Simpler than full ORMs (SQLAlchemy, Django ORM)
-- Explicit SQL visibility (no query hiding)
-- Type-safe with Python 3.12 dataclasses
-- No session management complexity
-
-#### Named Queries
-
-**Location:** `whakoom_webscrapper/queries/`
-
-SQL files organized by table with named query sections.
-
-**Format:**
-```sql
-# QUERY_NAME
-SELECT * FROM table WHERE field = ?;
-
-# ANOTHER_QUERY
-INSERT INTO table (col1, col2) VALUES (?, ?);
+    lists {
+        int id PK
+        int whakoom_list_id UK
+        text name
+        text url UK
+        text user_profile
+        text description
+        int comic_count
+        int likes
+        text scrape_status
+    }
+    list_items {
+        int id PK
+        int list_id FK
+        int position
+        text volume_slug
+        text whakoom_publication_id
+        text volume_url
+        int volume_number
+        text publisher
+        int series_id FK
+    }
+    series {
+        int id PK
+        int whakoom_series_id UK
+        text slug UK
+        text url UK
+        text name
+        text original_title
+        int publisher_id FK
+        text status
+        text format
+        text language
+        int volumes_count
+        real rating
+        int rating_count
+        text rating_distribution
+        int ownership_count
+        text synopsis
+        text scrape_status
+    }
+    volumes {
+        int id PK
+        text volume_slug UK
+        int series_id FK
+        int number
+        text title
+        text publisher
+        text cover_url
+    }
+    publishers {
+        int id PK
+        int whakoom_id UK
+        text name UK
+        text url
+    }
+    authors {
+        int id PK
+        int whakoom_id UK
+        text name
+        text url
+    }
+    series_authors {
+        int series_id PK_FK
+        int author_id PK_FK
+        text role PK
+    }
+    series_observations {
+        int id PK
+        int series_id FK
+        int run_id FK
+        text observed_at
+        real rating
+        int rating_count
+        text rating_distribution
+        int ownership_count
+        int volumes_count
+        text status
+    }
+    scrape_runs {
+        int id PK
+        text stage
+        text status
+        int items_processed
+        int items_failed
+        text notes
+        text started_at
+        text finished_at
+    }
 ```
 
-**Benefits:**
-- Reusable query definitions
-- Version control for SQL
-- Easy to review and modify
-- Prevents string interpolation
+Unique constraints of note: `lists.(whakoom_list_id)`, `lists.(url)`, `series.(whakoom_series_id)`,
+`series.(slug)`, `series.(url)`, `volumes.(volume_slug)`, `list_items.(list_id, position)`,
+`list_items.(list_id, volume_slug)`, `series_observations.(series_id, run_id)`. These enforce the
+**deduplication hard rule** (AGENTS §6) at the database level.
 
-#### Migrations
+## 4. Domain model (class diagram)
 
-**Location:** `whakoom_webscrapper/migrations/`
+Domain dataclasses live in [`domain.py`](../whakoom_scraper/domain.py). All are `kw_only=True`. The scraper
+output types (`SeriesRef`, `ReconcileResult`) are frozen. `Series` composes `Publisher`, a list of
+`Author` (with role), and a list of `Volume`.
 
-Versioned SQL migration files with `Up` and `Down` sections.
+```mermaid
+classDiagram
+    class List {
+        +int whakoom_list_id
+        +str name
+        +str url
+        +str user_profile
+        +str description
+        +int comic_count
+        +int likes
+    }
+    class ListItem {
+        +int list_id
+        +int position
+        +str volume_slug
+        +str volume_url
+        +str whakoom_publication_id
+        +int volume_number
+        +str publisher
+        +int series_id
+    }
+    class Series {
+        +int whakoom_series_id
+        +str slug
+        +str url
+        +str name
+        +str original_title
+        +Publisher publisher
+        +str status
+        +str format
+        +str language
+        +int volumes_count
+        +float rating
+        +int rating_count
+        +dict rating_distribution
+        +int ownership_count
+        +str synopsis
+        +str scrape_status
+        +list authors
+        +list volumes
+    }
+    class Volume {
+        +str volume_slug
+        +int series_id
+        +int number
+        +str title
+        +str publisher
+        +str cover_url
+    }
+    class Publisher {
+        +str name
+        +int whakoom_id
+        +str url
+    }
+    class Author {
+        +str name
+        +str role
+        +int whakoom_id
+        +str url
+    }
+    class Observation {
+        +int series_id
+        +int run_id
+        +float rating
+        +int rating_count
+        +dict rating_distribution
+        +int ownership_count
+        +int volumes_count
+        +str status
+    }
+    class SeriesRef {
+        +int whakoom_series_id
+        +str slug
+        +str url
+        +str name
+    }
+    class ReconcileResult {
+        +int previous_count
+        +int new_count
+        +int inserted
+        +int removed
+        +tuple removed_slugs
+    }
 
-**Naming Convention:** `XXX_description.sql` (e.g., `001_initial_schema.sql`)
-
-**Format:**
-```sql
--- Up
-CREATE TABLE lists (...);
-CREATE TABLE titles (...);
-
--- Down
-DROP TABLE IF EXISTS lists;
-DROP TABLE IF EXISTS titles;
+    List "1" --> "*" ListItem
+    ListItem ..> Series : resolves to
+    Series "1" --> "*" Volume
+    Series "1" --> "*" Author
+    Series ..> Publisher
+    Series ..> Observation
 ```
 
-**Behavior:**
-- Auto-applied on spider start
-- Tracked in `migrations` table
-- Idempotent (safe to re-run)
+## 5. Gated series resolution (built — `resolve.py`)
 
----
+List items expose only volume URLs (`/comics/{volume_slug}/...`); the numeric `whakoom_series_id` is only
+published on gated pages. The resolver maps a volume slug to a `SeriesRef` using a logged-in session — the
+**single gated step**, gated behind `WK_ALLOW_GATED_RESOLUTION=1` (see
+[ADR-0002](adr/0002-cookie-backed-series-resolution.md)). This is already implemented in
+[`scrapers/resolve.py`](../whakoom_scraper/scrapers/resolve.py).
 
-## Design Decisions
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Stage as resolve stage (P5)
+    participant R as resolve_series_id
+    participant W as WhakoomSession
+    participant QV as /pwkws.asmx/QuickView (gated)
+    participant V as /comics/ (gated)
 
-### Why SQLite?
-
-**Pros:**
-- Zero configuration - no database server needed
-- File-based - easy to backup and migrate
-- Sufficient for hobby/exploratory projects
-- Built-in Python support
-
-**Cons:**
-- Not suitable for high concurrency
-- Limited to single-writer at a time
-- No built-in replication
-
-**Decision:** SQLite is appropriate for this project because:
-- Single-user scraping workflow
-- Batch processing (no real-time requirements)
-- Easy to share database files
-- Scales to millions of records
-
-### Why Scrapy?
-
-**Pros:**
-- Mature, battle-tested framework
-- Built-in concurrency and rate limiting
-- Extensible middleware and pipelines
-- Active community and documentation
-
-**Cons:**
-- Learning curve for custom features
-- Overkill for simple scraping tasks
-
-**Decision:** Scrapy provides the right balance of power and flexibility for:
-- Multiple spiders with shared infrastructure
-- Complex pagination and navigation
-- Pipeline-based item processing
-- Future scalability
-
-### Why Dataclasses Instead of ORM?
-
-**Pros:**
-- No dependencies beyond Python stdlib
-- Explicit field definitions
-- Easy to understand and debug
-- Full control over SQL queries
-
-**Cons:**
-- Manual to_tuple() methods
-- No automatic relationship loading
-- More boilerplate code
-
-**Decision:** Dataclasses + SQLManager provides:
-- Type safety with Python 3.12
-- Explicit database schema visibility
-- Simpler than full ORM (SQLAlchemy)
-- Perfect fit for project scale
-
-### Why Selenium Only for Publications Spider?
-
-**Reasoning:**
-- List pages are static HTML (Scrapy suffices)
-- List pages use lazy loading for volumes (Selenium required)
-- Volume pages are static (after navigation)
-
-**Decision:** Use Selenium strategically:
-- Only when needed (dynamic content)
-- Headless mode for performance
-- Driver cleanup to prevent memory leaks
-
----
-
-## Technology Stack
-
-### Core Dependencies
-
-| Component | Technology | Version | Purpose |
-|-----------|-----------|----------|---------|
-| Language | Python | 3.12+ | Scripting and logic |
-| Scraping | Scrapy | 2.11+ | Web scraping framework |
-| Browser Automation | Selenium | 4.x+ | Dynamic content handling |
-| Database | SQLite | 3.x | Data persistence |
-| Package Manager | uv | Latest | Dependency management |
-
-### Python Dependencies
-
-Key dependencies from `pyproject.toml`:
-
-- `scrapy` - Web scraping framework
-- `selenium` - Browser automation
-- `colorlog` - Colored console logging
-- `lxml` - XML/HTML parsing
-- `w3lib` - URL encoding utilities
-
-### Development Tools
-
-- `ruff` - Fast Python linter
-- `black` - Code formatter
-- `bandit` - Security linter
-- `pre-commit` - Git hooks
-
----
-
-## Data Models
-
-### Core Entities
-
-1. **User Profile** - Whakoom user containing lists
-2. **List** - Curated collection of manga titles
-3. **Title** - Manga series/collection (deduplicated)
-4. **Volume** - Individual issue/volume in a series
-5. **Metadata** - Title information (author, publisher, etc.)
-6. **Enriched Data** - External API data (MyAnimeList, etc.)
-
-### Relationships
-
-```
-User Profile 1--* List
-List *--* Title (many-to-many via lists_titles)
-Title 1--* Volume
-Title 1--1 TitleMetadata
-Title 1--0..1 TitleEnriched
+    Stage->>R: resolve_series_id(session, volume_slug)
+    R->>W: POST QuickView {"cid": "comic{slug}"}
+    W->>QV: request (with cookies)
+    alt 200 + /ediciones/{id}/{slug} link
+        QV-->>R: html
+        R-->>Stage: SeriesRef(id, slug, name)
+    else redirect to /login (cookie expired)
+        QV-->>R: 302 /login
+        R-->>Stage: raises SessionExpiredError (exit code 3)
+    else QuickView unusable — fallback
+        R->>W: GET /comics/{slug}/ (follow_redirects=False)
+        W->>V: request (with cookies)
+        alt 3xx Location /ediciones/{id}
+            V-->>R: 302 /ediciones/...
+            R-->>Stage: SeriesRef(...)
+        else 3xx Location /login
+            V-->>R: 302 /login
+            R-->>Stage: raises SessionExpiredError
+        else 200 body with /ediciones/ link
+            V-->>R: html
+            R-->>Stage: SeriesRef(...)
+        else unresolved
+            R-->>Stage: None (→ review_unresolved.csv)
+        end
+    end
 ```
 
-### Deduplication Strategy
+## 6. List-detail pagination (next — P3 parser + P4 stage)
 
-**Problem:** A manga title can appear in multiple lists.
+This is the **immediately next** work for the parser layer. The first 50 list items are server-rendered;
+further pages come from a JSON endpoint that terminates when `ExtraInfo == "0"`. The parsers
+(`parse_list_page`, `parse_series_page_json`) are **pure functions** to be added in Phase 3; the stage
+wiring is Phase 4.
 
-**Solution:**
-1. **titles table** has UNIQUE constraint on `title_id`
-2. **INSERT OR IGNORE** prevents duplicate title entries
-3. **lists_titles junction table** preserves all list associations
-4. First occurrence wins (data from first list is kept)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Stage as list-detail stage (P4)
+    participant P as list_detail parser (P3)
+    participant W as WhakoomSession
+    participant Site as whakoom.com
 
----
+    Stage->>W: GET /{profile}/lists/{slug}_{id}
+    W->>Site: request
+    Site-->>W: html (first 50 items)
+    W-->>Stage: response
+    Stage->>P: parse_list_page(html)
+    P-->>Stage: (list_meta, items_page1)
+    loop p = 2, 3, ... until ExtraInfo == "0"
+        Stage->>W: POST /lists/listdetail.aspx/SeriesPage {id, f: 0, p}
+        W->>Site: request
+        Site-->>W: {Html, ExtraInfo}
+        Stage->>P: parse_series_page_json(payload)
+        P-->>Stage: (items_p, next_page = None if ExtraInfo=="0" else p+1)
+    end
+    Stage->>Stage: reconcile + upsert list_items (UNIQUE list_id,volume_slug)
+```
 
-## Scalability Considerations
+## 7. Phase progression
 
-### Current Limitations
+Strict phase dependencies (P0 → P8). Green = built; amber = in progress; grey = planned.
 
-- Single-writer SQLite (no concurrent scraping)
-- Selenium is CPU-intensive
-- No distributed processing
-- No incremental updates (full re-scrape by default)
+```mermaid
+flowchart LR
+    P0["P0 scaffold ✅"] --> P1["P1 store ✅"]
+    P1 --> P2["P2 http ✅"]
+    P2 --> P3["P3 parsers ⏳<br/>(resolve ✅)"]
+    P3 --> P4["P4 stages 1+2 🔜"]
+    P4 --> P5["P5 resolve stage 🔜"]
+    P5 --> P6["P6 series stage 🔜"]
+    P6 --> P7["P7 validate+analyze 🔜"]
+    P7 --> P8["P8 polish+docs 🔜"]
+```
 
-### Future Scalability Options
+Every phase passes the global gates (`uv run pytest`, `ruff`, `mypy`, `bandit`, `pre-commit`) before it is
+marked done. See [`../phases.md`](../phases.md) for deliverables, validation gates, and per-phase "done
+when" criteria.
 
-1. **Database Migration**
-   - PostgreSQL for concurrent access
-   - Connection pooling
-   - Read replicas
+## 8. Cross-cutting conventions
 
-2. **Processing Architecture**
-   - Celery tasks for async processing
-   - Redis queue for job distribution
-   - Worker pool for parallel scraping
-
-3. **Caching Strategy**
-   - Scrapy HTTP cache for debugging
-   - Redis cache for URL deduplication
-   - Browser session reuse
-
-4. **Monitoring**
-   - Metrics collection (Prometheus)
-   - Alerting (health checks)
-   - Log aggregation (ELK stack)
-
----
-
-## Security Considerations
-
-### SQL Injection Prevention
-
-- All queries use parameterized statements (`?` placeholders)
-- No string interpolation in SQL
-- Named queries loaded from files
-- SQLManager enforces safe patterns
-
-### Web Scraping Ethics
-
-- Respect robots.txt (`ROBOTSTXT_OBEY = True`)
-- Rate limiting (AutoThrottle enabled)
-- User-agent identification
-- No authentication bypass attempts
-
-### Data Privacy
-
-- No personal information storage
-- No scraping of private lists
-- No credentials in code
-- Environment variables only
-
----
-
-## Future Architecture Extensions
-
-### Planned Enhancements
-
-1. **Title Spider** - Scrape detailed title metadata
-2. **Volume Rework** - Extract volume metadata (ISBN, publisher, year)
-3. **Enrichment Service** - Integrate MyAnimeList, MangaUpdates APIs
-4. **Analysis Layer** - Statistical analysis, NLP, semantic analysis
-5. **API Layer** - REST API for data access (optional)
-6. **Web UI** - Dashboard for viewing scraped data (optional)
-
-### Integration Points
-
-- **External APIs** - MyAnimeList, MangaUpdates, AniList
-- **Data Analysis** - Pandas, NumPy, scikit-learn
-- **Visualization** - Matplotlib, Plotly
-- **Deployment** - Docker, Kubernetes (if needed)
-
----
-
-## Related Documentation
-
-- [Getting Started](getting-started.md) - Quick start guide
-- [Workflows](workflows/) - Detailed spider workflows
-- [Database Schema](database/schema.md) - Complete database documentation
-- [SQLManager Guide](database/sqlmanager-guide.md) - SQLManager usage
-- [Migrations Guide](database/migrations-guide.md) - Migration system
-- [Contributing](development/contributing.md) - Development guidelines
+- **No raw SQL outside the store.** Stages call `repositories.*`; repositories call
+  `Database.execute(file, name, params)`; SQL lives in `store/queries/*.sql` with `-- name:` markers and
+  `?` placeholders only (AGENTS §5).
+- **No network outside `http/`.** The single retrying client (`WhakoomSession`) is the network boundary;
+  politeness + retry are centralized there (ADR-0006).
+- **Bandit-clean by construction.** Non-security randomness uses `random.SystemRandom`; non-security
+  hashing uses `hashlib.sha256` — no `# nosec` suppressions (ADR-0007, AGENTS §2).
+- **Dedup is a hard rule.** Enforced by `UNIQUE` constraints + `ON CONFLICT` upserts at the DB level
+  (AGENTS §6).
+- **Errors are loud.** Session expiry aborts `resolve` with exit code 3; exhausted retries raise
+  `TransientRequestError`; nothing fails silently (AGENTS §6).

@@ -2,11 +2,30 @@
 
 from __future__ import annotations
 
-import httpx
+from collections.abc import Callable
 
+import httpx
+from tenacity import wait_none
+
+from whakoom_scraper.config import Settings
 from whakoom_scraper.http.policy import RobotsPolicy
+from whakoom_scraper.http.session import WhakoomSession
 
 ROBOTS = "User-agent: *\nDisallow: /comics/\n"
+
+
+def _fast_settings() -> Settings:
+    """Return settings with politeness delay disabled."""
+    return Settings(delay_seconds=0.0, jitter_seconds=0.0)
+
+
+def _make_session(handler: Callable[[httpx.Request], httpx.Response]) -> WhakoomSession:
+    """Build a session backed by a MockTransport invoking ``handler``."""
+    client = httpx.Client(
+        base_url="https://www.whakoom.com",
+        transport=httpx.MockTransport(handler),
+    )
+    return WhakoomSession(_fast_settings(), client=client, retry_wait=wait_none())
 
 
 def test_public_paths_allowed() -> None:
@@ -29,8 +48,8 @@ def test_comics_allowed_with_flag() -> None:
     assert policy.is_allowed("/comics/token/slug/1")
 
 
-def test_from_client_fetches_and_parses_robots() -> None:
-    """from_client fetches /robots.txt and parses the rules."""
+def test_from_session_fetches_robots_through_session() -> None:
+    """from_session fetches /robots.txt via the polite session wrapper."""
     fetched: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -38,12 +57,11 @@ def test_from_client_fetches_and_parses_robots() -> None:
         fetched.append(request.url.path)
         return httpx.Response(200, text=ROBOTS)
 
-    client = httpx.Client(
-        base_url="https://www.whakoom.com",
-        transport=httpx.MockTransport(handler),
-    )
-    policy = RobotsPolicy.from_client(client, user_agent="wk", allow_gated=False)
+    session = _make_session(handler)
+    try:
+        policy = RobotsPolicy.from_session(session, user_agent="wk", allow_gated=False)
+    finally:
+        session.close()
     assert fetched == ["/robots.txt"]
     assert policy.is_allowed("/deirdre/lists/")
     assert not policy.is_allowed("/comics/x")
-    client.close()

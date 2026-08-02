@@ -28,6 +28,10 @@ SCRAPE_STATUSES = ("pending", "completed", "failed")
 RUN_STATUSES = ("running", "completed", "failed", "aborted")
 
 
+class RecordMissingError(RuntimeError):
+    """Raised when a post-upsert lookup cannot find the row just written."""
+
+
 def _list_from_row(row: sqlite3.Row) -> List:
     return List(
         whakoom_list_id=row["whakoom_list_id"],
@@ -88,6 +92,9 @@ def upsert_list(db: Database, list_: List) -> int:
 
     Returns:
         The surrogate row id.
+
+    Raises:
+        RecordMissingError: If the post-upsert lookup cannot find the row.
     """
     db.execute(
         "lists",
@@ -103,7 +110,9 @@ def upsert_list(db: Database, list_: List) -> int:
         ),
     )
     row = db.fetchone("lists", "get_list", (list_.whakoom_list_id,))
-    return int(row["id"]) if row else 0
+    if row is None:
+        raise RecordMissingError(f"upsert_list: list whakoom_id={list_.whakoom_list_id} vanished after upsert")
+    return int(row["id"])
 
 
 def get_list(db: Database, whakoom_list_id: int) -> List | None:
@@ -132,16 +141,32 @@ def get_lists(db: Database) -> list[List]:
     return [_list_from_row(row) for row in db.fetchall("lists", "get_lists")]
 
 
-def get_pending_lists(db: Database) -> list[List]:
+def get_pending_lists(db: Database, *, include_failed: bool = False) -> list[List]:
     """Fetch lists that still need their contents scraped.
+
+    Args:
+        db: Database handle.
+        include_failed: When True, also include lists marked ``failed`` so a
+            ``--force`` retry can pick them up; the default excludes them.
+
+    Returns:
+        Lists whose ``scrape_status`` is ``pending`` (and ``failed`` when
+        ``include_failed`` is True).
+    """
+    query_name = "get_pending_lists_with_failed" if include_failed else "get_pending_lists"
+    return [_list_from_row(row) for row in db.fetchall("lists", query_name)]
+
+
+def get_failed_lists(db: Database) -> list[List]:
+    """Fetch lists whose last scrape attempt failed.
 
     Args:
         db: Database handle.
 
     Returns:
-        Lists whose ``scrape_status`` is not ``completed``.
+        Lists whose ``scrape_status`` is ``failed``.
     """
-    return [_list_from_row(row) for row in db.fetchall("lists", "get_pending_lists")]
+    return [_list_from_row(row) for row in db.fetchall("lists", "get_failed_lists")]
 
 
 def mark_list_status(db: Database, whakoom_list_id: int, status: str) -> None:
@@ -169,15 +194,29 @@ def reset_lists_pending(db: Database) -> None:
     db.execute("lists", "reset_lists_pending")
 
 
+def invalidate_lists(db: Database) -> None:
+    """Reset every list back to ``pending`` for a full refresh (``--reset``).
+
+    Unlike :func:`reset_lists_pending`, this also flips ``failed`` rows back to
+    ``pending`` and clears ``scraped_at`` so the next run re-scrapes everything.
+
+    Args:
+        db: Database handle.
+    """
+    db.execute("lists", "invalidate_lists")
+
+
 def replace_list_items(db: Database, list_id: int, items: Sequence[ListItem]) -> ReconcileResult:
     """Replace a list's items with the freshly fetched version of that list.
 
     Per-list reconciliation (V2 §10 Stage 2): the fetched set is the source of
     truth. Stored rows no longer present are deleted, every fetched item is
     inserted, and previously resolved ``series_id`` links are preserved via the
-    slug→series map. Because inserts run against an empty list, the
-    ``UNIQUE (list_id, position)`` constraint can no longer collide when items
-    are reordered, shrunk, or swapped between runs.
+    slug→series map. Cross-list links are reused through a global slug→series
+    map so a slug resolved in list A is not re-requested in list B. Because
+    inserts run against an empty list, the ``UNIQUE (list_id, position)``
+    constraint can no longer collide when items are reordered, shrunk, or
+    swapped between runs.
 
     Args:
         db: Database handle.
@@ -190,9 +229,11 @@ def replace_list_items(db: Database, list_id: int, items: Sequence[ListItem]) ->
     previous = {
         row["volume_slug"]: row["series_id"] for row in db.fetchall("list_items", "get_list_item_series_map", (list_id,))
     }
+    global_map = get_global_slug_series_map(db)
     db.execute("list_items", "delete_list_items_for_list", (list_id,))
     rows: list[tuple[object, ...]] = []
     for item in items:
+        series_id = item.series_id or previous.get(item.volume_slug) or global_map.get(item.volume_slug)
         rows.append(
             (
                 list_id,
@@ -202,7 +243,7 @@ def replace_list_items(db: Database, list_id: int, items: Sequence[ListItem]) ->
                 item.volume_url,
                 item.volume_number,
                 item.publisher,
-                item.series_id if item.series_id is not None else previous.get(item.volume_slug),
+                series_id,
             )
         )
     db.executemany("list_items", "insert_list_item", rows)
@@ -211,10 +252,25 @@ def replace_list_items(db: Database, list_id: int, items: Sequence[ListItem]) ->
     return ReconcileResult(
         previous_count=len(previous),
         new_count=len(items),
-        inserted=len(rows),
+        written=len(rows),
         removed=len(removed_slugs),
         removed_slugs=removed_slugs,
     )
+
+
+def get_global_slug_series_map(db: Database) -> dict[str, int]:
+    """Build a global volume-slug → series-id map across every list.
+
+    Used by :func:`replace_list_items` to reuse resolution links across lists
+    and avoid re-requesting slugs already resolved elsewhere.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Mapping of volume slug to resolved series row id.
+    """
+    return {str(row["volume_slug"]): int(row["series_id"]) for row in db.fetchall("list_items", "get_global_slug_series_map")}
 
 
 def count_items_for_list(db: Database, list_id: int) -> int:
@@ -263,6 +319,9 @@ def upsert_publisher(db: Database, publisher: Publisher) -> int:
 
     Returns:
         The surrogate row id.
+
+    Raises:
+        RecordMissingError: If the post-upsert lookup cannot find the row.
     """
     db.execute(
         "series",
@@ -270,7 +329,9 @@ def upsert_publisher(db: Database, publisher: Publisher) -> int:
         (publisher.whakoom_id, publisher.name, publisher.url),
     )
     row = db.fetchone("series", "get_publisher_id_by_name", (publisher.name,))
-    return int(row["id"]) if row else 0
+    if row is None:
+        raise RecordMissingError(f"upsert_publisher: publisher name={publisher.name!r} vanished after upsert")
+    return int(row["id"])
 
 
 def get_publisher_by_name(db: Database, name: str) -> Publisher | None:
@@ -296,6 +357,9 @@ def upsert_author(db: Database, author: Author) -> int:
 
     Returns:
         The surrogate row id.
+
+    Raises:
+        RecordMissingError: If the post-upsert lookup cannot find the row.
     """
     if author.whakoom_id is not None:
         db.execute(
@@ -304,13 +368,17 @@ def upsert_author(db: Database, author: Author) -> int:
             (author.whakoom_id, author.name, author.url),
         )
         row = db.fetchone("series", "get_author_id_by_whakoom_id", (author.whakoom_id,))
-        return int(row["id"]) if row else 0
+        if row is None:
+            raise RecordMissingError(f"upsert_author: author whakoom_id={author.whakoom_id} vanished after upsert")
+        return int(row["id"])
     existing = db.fetchone("series", "get_author_id_by_name", (author.name,))
     if existing is not None:
         return int(existing["id"])
     db.execute("series", "upsert_author", (None, author.name, author.url))
     row = db.fetchone("series", "get_author_id_by_name", (author.name,))
-    return int(row["id"]) if row else 0
+    if row is None:
+        raise RecordMissingError(f"upsert_author: author name={author.name!r} vanished after upsert")
+    return int(row["id"])
 
 
 def get_author_by_name(db: Database, name: str) -> Author | None:
@@ -352,6 +420,9 @@ def stub_series(db: Database, ref: SeriesRef) -> int:
 
     Returns:
         The surrogate row id.
+
+    Raises:
+        RecordMissingError: If the post-stub lookup cannot find the row.
     """
     db.execute(
         "series",
@@ -359,7 +430,9 @@ def stub_series(db: Database, ref: SeriesRef) -> int:
         (ref.whakoom_series_id, ref.slug, ref.url, ref.name),
     )
     row = db.fetchone("series", "get_series_id", (ref.whakoom_series_id,))
-    return int(row["id"]) if row else 0
+    if row is None:
+        raise RecordMissingError(f"stub_series: series whakoom_id={ref.whakoom_series_id} vanished after stub")
+    return int(row["id"])
 
 
 def get_series(db: Database, whakoom_series_id: int) -> Series | None:
@@ -376,16 +449,32 @@ def get_series(db: Database, whakoom_series_id: int) -> Series | None:
     return _series_from_row(row) if row else None
 
 
-def get_pending_series(db: Database) -> list[Series]:
+def get_pending_series(db: Database, *, include_failed: bool = False) -> list[Series]:
     """Fetch series whose full details have not been scraped.
+
+    Args:
+        db: Database handle.
+        include_failed: When True, also include series marked ``failed`` so a
+            ``--force`` retry can pick them up; the default excludes them.
+
+    Returns:
+        Series whose ``scrape_status`` is ``pending`` (and ``failed`` when
+        ``include_failed`` is True).
+    """
+    query_name = "get_pending_series_with_failed" if include_failed else "get_pending_series"
+    return [_series_from_row(row) for row in db.fetchall("series", query_name)]
+
+
+def get_failed_series(db: Database) -> list[Series]:
+    """Fetch series whose last scrape attempt failed.
 
     Args:
         db: Database handle.
 
     Returns:
-        Series whose ``scrape_status`` is not ``completed``.
+        Series whose ``scrape_status`` is ``failed``.
     """
-    return [_series_from_row(row) for row in db.fetchall("series", "get_pending_series")]
+    return [_series_from_row(row) for row in db.fetchall("series", "get_failed_series")]
 
 
 def upsert_series(db: Database, series: Series, publisher_id: int | None) -> int:
@@ -398,6 +487,9 @@ def upsert_series(db: Database, series: Series, publisher_id: int | None) -> int
 
     Returns:
         The surrogate row id.
+
+    Raises:
+        RecordMissingError: If the post-upsert lookup cannot find the row.
     """
     db.execute(
         "series",
@@ -421,7 +513,9 @@ def upsert_series(db: Database, series: Series, publisher_id: int | None) -> int
         ),
     )
     row = db.fetchone("series", "get_series_id", (series.whakoom_series_id,))
-    return int(row["id"]) if row else 0
+    if row is None:
+        raise RecordMissingError(f"upsert_series: series whakoom_id={series.whakoom_series_id} vanished after upsert")
+    return int(row["id"])
 
 
 def set_series_status(db: Database, series_id: int, status: str) -> None:

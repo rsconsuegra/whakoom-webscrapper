@@ -31,8 +31,8 @@ from tenacity import (
 from tenacity.wait import wait_base
 
 from whakoom_scraper.config import Settings
+from whakoom_scraper.constants import BASE_URL
 
-BASE_URL = "https://www.whakoom.com"
 DEFAULT_TIMEOUT = httpx.Timeout(30.0)
 
 _RETRYABLE_EXCEPTIONS = (httpx.TimeoutException, httpx.ConnectError)

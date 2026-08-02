@@ -114,7 +114,59 @@ SELECT
     created_at,
     updated_at
 FROM series
-WHERE scrape_status != 'completed'
+WHERE scrape_status = 'pending'
+ORDER BY id;
+
+-- name: get_pending_series_with_failed
+SELECT
+    id,
+    whakoom_series_id,
+    slug,
+    url,
+    name,
+    original_title,
+    publisher_id,
+    status,
+    format,
+    language,
+    volumes_count,
+    rating,
+    rating_count,
+    rating_distribution,
+    ownership_count,
+    synopsis,
+    scrape_status,
+    scraped_at,
+    created_at,
+    updated_at
+FROM series
+WHERE scrape_status IN ('pending', 'failed')
+ORDER BY id;
+
+-- name: get_failed_series
+SELECT
+    id,
+    whakoom_series_id,
+    slug,
+    url,
+    name,
+    original_title,
+    publisher_id,
+    status,
+    format,
+    language,
+    volumes_count,
+    rating,
+    rating_count,
+    rating_distribution,
+    ownership_count,
+    synopsis,
+    scrape_status,
+    scraped_at,
+    created_at,
+    updated_at
+FROM series
+WHERE scrape_status = 'failed'
 ORDER BY id;
 
 -- name: upsert_series

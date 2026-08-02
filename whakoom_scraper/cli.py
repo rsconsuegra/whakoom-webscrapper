@@ -13,6 +13,9 @@ from typing import Annotated
 import typer
 
 from whakoom_scraper.config import load_settings
+from whakoom_scraper.pipeline.stage_list_detail import run_list_detail
+from whakoom_scraper.pipeline.stage_lists import run_lists
+from whakoom_scraper.pipeline.stage_resolve import run_resolve
 
 app = typer.Typer(
     name="wk",
@@ -31,14 +34,20 @@ def _bootstrap() -> None:
 def _not_implemented(command: str, **flags: object) -> None:
     """Report that a stage is not yet implemented, echoing any set flags.
 
+    Exits nonzero so a stub is never mistaken for a completed stage (I1).
+
     Args:
         command: The name of the requested stage.
         **flags: Option values passed to the stage; truthy ones are echoed so the
             caller can confirm the CLI parsed them correctly.
+
+    Raises:
+        typer.Exit: Always, with exit code ``1``.
     """
     parts = [f"[{command}] stage not implemented yet (Phase 0 skeleton)"]
     parts += [f"{name}={value}" for name, value in flags.items() if value]
     typer.echo(" ".join(parts))
+    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -46,7 +55,7 @@ def lists(
     reset: Annotated[bool, typer.Option(help="Re-mark all lists as pending.")] = False,
 ) -> None:
     """Stage 1: scrape the profile lists index."""
-    _not_implemented("lists", reset=reset)
+    raise typer.Exit(code=run_lists(load_settings(), reset=reset))
 
 
 @app.command("list-detail")
@@ -55,7 +64,7 @@ def list_detail(
     scrape_all: Annotated[bool, typer.Option("--all", help="Scrape every pending list.")] = False,
 ) -> None:
     """Stage 2: scrape list contents with pagination."""
-    _not_implemented("list-detail", list_id=list_id, all=scrape_all)
+    raise typer.Exit(code=run_list_detail(load_settings(), list_id=list_id, scrape_all=scrape_all))
 
 
 @app.command()
@@ -63,7 +72,7 @@ def resolve(
     limit: Annotated[int | None, typer.Option(help="Cap the number of slugs resolved.")] = None,
 ) -> None:
     """Stage 3: resolve volume slugs to series (login-gated)."""
-    _not_implemented("resolve", limit=limit)
+    raise typer.Exit(code=run_resolve(load_settings(), limit=limit))
 
 
 @app.command()

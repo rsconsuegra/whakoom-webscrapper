@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS lists (
     description TEXT,
     comic_count INTEGER,
     likes INTEGER,
+    -- list_type is intentionally unconstrained until Stage 1
+    -- defines the value domain.
     list_type TEXT,
     canonical_name TEXT,
     scrape_status TEXT NOT NULL DEFAULT 'pending'
@@ -63,7 +65,9 @@ CREATE TABLE IF NOT EXISTS authors (
 CREATE TABLE IF NOT EXISTS series (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     whakoom_series_id INTEGER NOT NULL UNIQUE,
-    slug TEXT NOT NULL UNIQUE,
+    -- slug is NOT unique: Whakoom slugifies CJK titles to underscore
+    -- strings, so distinct series can share a slug (id is the real key).
+    slug TEXT NOT NULL,
     url TEXT NOT NULL UNIQUE,
     name TEXT,
     original_title TEXT,
@@ -71,11 +75,11 @@ CREATE TABLE IF NOT EXISTS series (
     status TEXT,
     format TEXT,
     language TEXT,
-    volumes_count INTEGER,
+    volumes_count INTEGER CHECK (volumes_count >= 0),
     rating REAL CHECK (rating BETWEEN 0 AND 5),
-    rating_count INTEGER,
+    rating_count INTEGER CHECK (rating_count >= 0),
     rating_distribution TEXT,
-    ownership_count INTEGER,
+    ownership_count INTEGER CHECK (ownership_count >= 0),
     synopsis TEXT,
     scrape_status TEXT NOT NULL DEFAULT 'pending'
     CHECK (scrape_status IN ('pending', 'completed', 'failed')),
@@ -93,12 +97,16 @@ CREATE TABLE IF NOT EXISTS series_observations (
     run_id INTEGER NOT NULL REFERENCES scrape_runs (id),
     observed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     rating REAL CHECK (rating BETWEEN 0 AND 5),
-    rating_count INTEGER,
+    rating_count INTEGER CHECK (rating_count >= 0),
     rating_distribution TEXT,
-    ownership_count INTEGER,
-    volumes_count INTEGER,
+    ownership_count INTEGER CHECK (ownership_count >= 0),
+    volumes_count INTEGER CHECK (volumes_count >= 0),
     status TEXT,
     UNIQUE (series_id, run_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_observations_series ON series_observations (
+    series_id
 );
 
 CREATE TABLE IF NOT EXISTS volumes (
@@ -112,6 +120,8 @@ CREATE TABLE IF NOT EXISTS volumes (
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_volumes_series ON volumes (series_id);
 
 CREATE TABLE IF NOT EXISTS series_authors (
     series_id INTEGER NOT NULL REFERENCES series (id) ON DELETE CASCADE,

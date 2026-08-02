@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 from whakoom_scraper.config import PROJECT_ROOT
@@ -18,6 +19,50 @@ from whakoom_scraper.config import PROJECT_ROOT
 NAME_MARKER = re.compile(r"^-- name:\s*(\S+)\s*$", re.MULTILINE)
 QUERIES_DIR = PROJECT_ROOT / "whakoom_scraper" / "store" / "queries"
 MIGRATIONS_DIR = PROJECT_ROOT / "whakoom_scraper" / "store" / "migrations"
+
+
+def _is_blank_or_comment(text: str) -> bool:
+    """Check whether a SQL fragment carries no executable statement.
+
+    Args:
+        text: A SQL fragment produced by the statement splitter.
+
+    Returns:
+        True if every line is empty or a ``--`` comment.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("--"):
+            return False
+    return True
+
+
+def _split_statements(text: str) -> Iterator[str]:
+    """Split a SQL script into statements using sqlite's own parser.
+
+    Walks the script char-by-char; each time
+    :func:`sqlite3.complete_statement` reports a complete statement, the
+    accumulated buffer is flushed. Comment-only or blank fragments are skipped,
+    and string literals are never split (``complete_statement`` tracks quotes).
+    Migration files are owned by this repo, so the splitter is defensive.
+
+    Args:
+        text: A full SQL migration script.
+
+    Yields:
+        Each non-empty, non-comment-only statement.
+    """
+    buffer = ""
+    for char in text:
+        buffer += char
+        if sqlite3.complete_statement(buffer):
+            statement = buffer.strip()
+            buffer = ""
+            if statement and not _is_blank_or_comment(statement):
+                yield statement
+    trailer = buffer.strip()
+    if trailer and not _is_blank_or_comment(trailer):
+        yield trailer
 
 
 def load_queries(queries_dir: Path) -> dict[tuple[str, str], str]:
@@ -30,12 +75,15 @@ def load_queries(queries_dir: Path) -> dict[tuple[str, str], str]:
         Mapping of ``(filename_stem, query_name)`` to the SQL statement.
 
     Raises:
-        ValueError: If a query marker has an empty body or a duplicated name.
+        ValueError: If a query marker has an empty body, a duplicated name,
+            or a non-empty ``.sql`` file yields zero ``-- name:`` markers.
     """
     queries: dict[tuple[str, str], str] = {}
     for path in sorted(queries_dir.glob("*.sql")):
         content = path.read_text(encoding="utf-8")
         markers = list(NAME_MARKER.finditer(content))
+        if content.strip() and not markers:
+            raise ValueError(f"No query markers in non-empty file {path.name}")
         for index, marker in enumerate(markers):
             name = marker.group(1)
             start = marker.end()
@@ -70,10 +118,15 @@ class Database:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
+        self._in_transaction = False
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._conn.execute("PRAGMA journal_mode = WAL")
-        self._queries = load_queries(queries_dir)
-        self._apply_migrations(migrations_dir)
+        try:
+            self._queries = load_queries(queries_dir)
+            self._apply_migrations(migrations_dir)
+        except BaseException:
+            self._conn.close()
+            raise
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -156,12 +209,43 @@ class Database:
         """Commit the current transaction."""
         self._conn.commit()
 
+    def begin(self) -> None:
+        """Begin an explicit ``BEGIN IMMEDIATE`` transaction on the connection."""
+        self._conn.execute("BEGIN IMMEDIATE")
+
+    def rollback(self) -> None:
+        """Roll back the current transaction."""
+        self._conn.execute("ROLLBACK")
+
+    @contextmanager
+    def transaction(self) -> Iterator[Database]:
+        """Context-managed transaction: commit on clean exit, rollback on error.
+
+        Yields:
+            This Database handle inside an open transaction.
+
+        Raises:
+            RuntimeError: If a transaction is already open on this connection.
+        """
+        if self._in_transaction:
+            raise RuntimeError("Nested transactions are not supported")
+        self._conn.execute("BEGIN IMMEDIATE")
+        self._in_transaction = True
+        try:
+            yield self
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+        finally:
+            self._in_transaction = False
+
     def close(self) -> None:
         """Close the underlying connection."""
         self._conn.close()
 
     def _apply_migrations(self, migrations_dir: Path) -> list[str]:
-        """Apply pending migrations in filename order.
+        """Apply pending migrations in filename order, one transaction each.
 
         Args:
             migrations_dir: Directory with ordered ``NNN_*.sql`` migrations.
@@ -178,7 +262,28 @@ class Database:
         applied = {row[0] for row in self._conn.execute("SELECT filename FROM _migrations")}
         pending = [path for path in sorted(migrations_dir.glob("*.sql")) if path.name not in applied]
         for path in pending:
-            self._conn.executescript(path.read_text(encoding="utf-8"))
-            self._conn.execute("INSERT INTO _migrations (filename) VALUES (?)", (path.name,))
-            self._conn.commit()
+            self._apply_migration_file(path)
         return [path.name for path in pending]
+
+    def _apply_migration_file(self, path: Path) -> None:
+        """Apply one migration inside its own transaction, recording it on success.
+
+        Any failure triggers ``ROLLBACK`` and re-raise so a broken migration
+        can never leave a partially-applied schema with no ``_migrations`` row.
+
+        Args:
+            path: Path to the migration ``.sql`` file.
+
+        Raises:
+            Exception: Any sqlite error is re-raised after rollback.
+        """
+        text = path.read_text(encoding="utf-8")
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            for statement in _split_statements(text):
+                self._conn.execute(statement)
+            self._conn.execute("INSERT INTO _migrations (filename) VALUES (?)", (path.name,))
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise

@@ -70,7 +70,47 @@ SELECT
     created_at,
     updated_at
 FROM lists
-WHERE scrape_status != 'completed'
+WHERE scrape_status = 'pending'
+ORDER BY id;
+
+-- name: get_pending_lists_with_failed
+SELECT
+    id,
+    whakoom_list_id,
+    name,
+    url,
+    user_profile,
+    description,
+    comic_count,
+    likes,
+    list_type,
+    canonical_name,
+    scrape_status,
+    scraped_at,
+    created_at,
+    updated_at
+FROM lists
+WHERE scrape_status IN ('pending', 'failed')
+ORDER BY id;
+
+-- name: get_failed_lists
+SELECT
+    id,
+    whakoom_list_id,
+    name,
+    url,
+    user_profile,
+    description,
+    comic_count,
+    likes,
+    list_type,
+    canonical_name,
+    scrape_status,
+    scraped_at,
+    created_at,
+    updated_at
+FROM lists
+WHERE scrape_status = 'failed'
 ORDER BY id;
 
 -- name: mark_list_status
@@ -84,3 +124,10 @@ WHERE whakoom_list_id = ?;
 -- name: reset_lists_pending
 UPDATE lists SET scrape_status = 'pending'
 WHERE scrape_status = 'completed';
+
+-- name: invalidate_lists
+UPDATE lists
+SET
+    scrape_status = 'pending',
+    scraped_at = NULL,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now');

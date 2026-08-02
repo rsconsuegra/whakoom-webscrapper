@@ -63,7 +63,10 @@ plans
 
 # V2 runtime data
 .env
+*_cookies.txt
+*.cookies.txt
 data/raw/
 data/exports/
 data/*.db
+data/*.csv
 *.egg-info

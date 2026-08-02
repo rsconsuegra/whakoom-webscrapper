@@ -127,12 +127,24 @@ class ReconcileResult:
     """Outcome of replacing a list's items with a freshly fetched set.
 
     ``removed_slugs`` lists slugs present in the previous version of the list
-    that are gone now; ``inserted`` and ``removed`` are their counts. Stages log
+    that are gone now; ``written`` and ``removed`` are their counts. Stages log
     a warning and record the delta when anything changed, but proceed.
     """
 
     previous_count: int
     new_count: int
-    inserted: int
+    written: int
     removed: int
     removed_slugs: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class ListPageMeta:
+    """Header metadata parsed from a list-detail page.
+
+    ``name`` and ``comic_count`` are the advertised list title and comic count
+    rendered in the page header; either may be absent on malformed pages.
+    """
+
+    name: str | None = None
+    comic_count: int | None = None

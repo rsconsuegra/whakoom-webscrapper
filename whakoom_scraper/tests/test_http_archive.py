@@ -14,6 +14,7 @@ def test_save_raw_writes_one_gzip(tmp_path: Path) -> None:
     target = save_raw(
         tmp_path,
         "lists",
+        "GET",
         "https://www.whakoom.com/deirdre/lists/",
         b"<html>ok</html>",
     )
@@ -27,15 +28,64 @@ def test_save_raw_writes_one_gzip(tmp_path: Path) -> None:
         assert handle.read() == b"<html>ok</html>"
 
 
-def test_deterministic_key_for_same_url(tmp_path: Path) -> None:
-    """The same URL yields the same archive filename."""
-    first = save_raw(tmp_path / "a", "lists", "https://www.whakoom.com/x", b"")
-    second = save_raw(tmp_path / "b", "lists", "https://www.whakoom.com/x", b"")
+def test_deterministic_key_for_same_request(tmp_path: Path) -> None:
+    """The same method+url+body yields the same archive filename."""
+    first = save_raw(tmp_path / "a", "lists", "GET", "https://www.whakoom.com/x", b"")
+    second = save_raw(tmp_path / "b", "lists", "GET", "https://www.whakoom.com/x", b"")
     assert first.name == second.name
 
 
 def test_distinct_urls_distinct_files(tmp_path: Path) -> None:
     """Distinct URLs yield distinct archive files."""
-    first = save_raw(tmp_path, "lists", "https://www.whakoom.com/a", b"")
-    second = save_raw(tmp_path, "lists", "https://www.whakoom.com/b", b"")
+    first = save_raw(tmp_path, "lists", "GET", "https://www.whakoom.com/a", b"")
+    second = save_raw(tmp_path, "lists", "GET", "https://www.whakoom.com/b", b"")
     assert first != second
+
+
+def test_distinct_methods_to_same_url_are_distinct(tmp_path: Path) -> None:
+    """GET vs POST to the same URL produce distinct archive filenames."""
+    get_path = save_raw(tmp_path, "lists", "GET", "https://www.whakoom.com/x", b"")
+    post_path = save_raw(tmp_path, "lists", "POST", "https://www.whakoom.com/x", b"")
+    assert get_path.name != post_path.name
+
+
+def test_distinct_bodies_to_same_url_are_distinct(tmp_path: Path) -> None:
+    """POSTs with different bodies to the same URL produce distinct filenames."""
+    first = save_raw(
+        tmp_path,
+        "lists",
+        "POST",
+        "https://www.whakoom.com/x",
+        b"",
+        request_body=b"cid=comicA",
+    )
+    second = save_raw(
+        tmp_path,
+        "lists",
+        "POST",
+        "https://www.whakoom.com/x",
+        b"",
+        request_body=b"cid=comicB",
+    )
+    assert first.name != second.name
+
+
+def test_identical_request_is_idempotent(tmp_path: Path) -> None:
+    """Same method+url+body yields the same filename across distinct roots."""
+    first = save_raw(
+        tmp_path / "a",
+        "lists",
+        "POST",
+        "https://www.whakoom.com/x",
+        b"",
+        request_body=b"cid=comicA",
+    )
+    second = save_raw(
+        tmp_path / "b",
+        "lists",
+        "POST",
+        "https://www.whakoom.com/x",
+        b"",
+        request_body=b"cid=comicA",
+    )
+    assert first.name == second.name

@@ -10,11 +10,8 @@ from __future__ import annotations
 
 from urllib.robotparser import RobotFileParser
 
-import httpx
-
-from whakoom_scraper.http.session import BASE_URL
-
-GATED_PREFIX = "/comics/"
+from whakoom_scraper.constants import BASE_URL, GATED_PREFIX, ROBOTS_PATH
+from whakoom_scraper.http.session import WhakoomSession
 
 
 class RobotsPolicy:
@@ -43,18 +40,22 @@ class RobotsPolicy:
         self._allow_gated = allow_gated
 
     @classmethod
-    def from_client(
+    def from_session(
         cls,
-        client: httpx.Client,
+        session: WhakoomSession,
         *,
         base_url: str = BASE_URL,
         user_agent: str,
         allow_gated: bool,
     ) -> RobotsPolicy:
-        """Fetch ``robots.txt`` over ``client`` and build a policy.
+        """Fetch ``robots.txt`` through ``session`` and build a policy.
+
+        Fetching through the :class:`WhakoomSession` ensures the robots request
+        travels the same politeness-delay, retry, user-agent, and cookie path as
+        every other request (H2), so no policy fetch bypasses the session.
 
         Args:
-            client: An httpx client (real or mock) with the Whakoom base URL set.
+            session: The Whakoom session (real or mock-backed) to fetch through.
             base_url: Site origin URL.
             user_agent: User-agent string to evaluate rules against.
             allow_gated: Whether the ``/comics/`` exception is enabled.
@@ -62,7 +63,7 @@ class RobotsPolicy:
         Returns:
             A populated ``RobotsPolicy``.
         """
-        response = client.get("/robots.txt")
+        response = session.get(ROBOTS_PATH)
         response.raise_for_status()
         return cls(
             response.text,

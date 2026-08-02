@@ -8,6 +8,13 @@ SELECT
 FROM list_items
 WHERE list_id = ?;
 
+-- name: get_global_slug_series_map
+SELECT DISTINCT
+    volume_slug,
+    series_id
+FROM list_items
+WHERE series_id IS NOT NULL;
+
 -- name: delete_list_items_for_list
 DELETE FROM list_items
 WHERE list_id = ?;

@@ -1,8 +1,16 @@
 # Whakoom Manga Lists Scraper
 
+> **Active design is `V2.md`** (Python 3.13-only, httpx + parsel + typer + rich). This
+> README still describes the **legacy** Scrapy+Selenium project (`whakoom_webscrapper/`,
+> frozen reference material — see AGENTS.md §1). The legacy tree is not wired in and is
+> not deleted; it is mined for selectors and endpoint knowledge. A full README rewrite
+> to match the V2 stack is a Phase 8 deliverable; until then, read the V2-specific
+> facts from `V2.md`, `phases.md`, `AGENTS.md`, and `docs/adr/`.
+
 ## Overview
 
-This project is a **Python 3.12 web scraping application** built with **Scrapy** that extracts manga collection data from a public WhaKoom user profile.
+This project is a **Python 3.13 web scraping application** (legacy tree built with
+**Scrapy**) that extracts manga collection data from a public WhaKoom user profile.
 
 Target profile:
 
@@ -507,7 +515,7 @@ sql_manager.insert(ListModel, list_model)
 * **Simpler than full ORM**: No Session management, declarative base, or relationship mapping
 * **Type-safe**: Compile-time type checking with mypy
 * **Easy to learn**: Gradual adoption, learn as you go
-* **No new dependencies**: Pure Python 3.12, uses stdlib dataclasses
+* **No new dependencies**: Pure Python 3.13, uses stdlib dataclasses
 * **Project scale**: Perfect for hobby/exploratory projects
 * **Explicit control**: Full SQL visibility when needed
 
@@ -542,8 +550,12 @@ sql_manager.insert(ListModel, list_model)
 
 ## Tech Stack
 
-* **Language:** Python 3.12
-* **Scraping Framework:** Scrapy
+> **Note (2026-08-02):** the **active** V2 stack is httpx + parsel + tenacity + typer
+> + rich on **Python 3.13 only** (see ADR-0010, ADR-0011, and `V2.md` §4). The legacy
+> stack listed below applies only to the frozen `whakoom_webscrapper/` reference tree.
+
+* **Language:** Python 3.13 (V2; ADR-0011). The legacy tree ran on 3.12.
+* **Scraping Framework:** Scrapy (legacy only). The V2 stack uses httpx + parsel.
 * **Database:** SQLite
 * **OS Compatibility:** Cross-platform (Linux / macOS / Windows)
 

@@ -4,8 +4,32 @@
 > stages**. Each phase has explicit deliverables, a validation gate, and numeric acceptance criteria.
 > A phase is **done** only when its gate passes; do not start the next phase on a failed gate.
 >
-> **Environment decision (2026-08-01):** the project runs on **Python 3.13** (pinned in `.python-version`,
-> venv rebuilt). `V2.md` declares `requires-python = ">=3.12"`, so 3.13 is fully supported.
+> **Environment decision (2026-08-01, revised 2026-08-02 per ADR-0011):** the project
+> runs on **Python 3.13** (pinned in `.python-version`, venv rebuilt).
+> `requires-python = ">=3.13"`; 3.13 is the **only** supported interpreter (other
+> versions are out of scope). ADR-0011 supersedes ADR-0004's `>=3.12` floor on this
+> point only.
+
+---
+
+## Phase numbering
+
+This document uses **workstream P0–P8** (implementation phases, each ending in a gate).
+`V2.md` §17 uses **roadmap Phase 0–5** (design-level milestones). The mapping:
+
+| V2.md §17 roadmap | phases.md workstream |
+|---|---|
+| Phase 0 — Scaffolding | P0 (scaffolding), P1 (store), P2 (http), P3 (parsers) |
+| Phase 1 — Public list stages | P4 (stages 1–2) |
+| Phase 2 — Resolution | P5 (stage 3 resolve) |
+| Phase 3 — Series scraping | P6 (stage 4 series) |
+| Phase 4 — Validation & analytics | P7 |
+| Phase 5 — Polish | P8 |
+
+Disambiguation rule: when a status note says **"Phase 2 completed"** it refers to
+phases.md **P2** (the http layer), **not** to V2.md §17 roadmap Phase 2 (resolution).
+Where the ambiguity could matter, status notes spell out which scheme they mean
+(e.g. "P2 (http) completed").
 
 ---
 
@@ -49,7 +73,8 @@ compilable home. Rewrite `pyproject.toml` to the V2 dependency set.
 
 **Deliverables**
 
-- `pyproject.toml` → V2 spec (name `whakoom-scraper`, `requires-python = ">=3.12"`, deps from V2 §4.2,
+- `pyproject.toml` → V2 spec (name `whakoom-scraper`, `requires-python = ">=3.13"` per
+  ADR-0011, deps from V2 §4.2,
   `[project.scripts] wk`, dev + analysis groups). Legacy deps (`scrapy`, `scrapy-splash`, `selenium`,
   `requests`, `bs4`) removed from `[project]`. This **freezes** the legacy package as dead reference code
   (see "Codebase strategy" above) — no files deleted, but it becomes non-runnable.
@@ -79,7 +104,7 @@ compilable home. Rewrite `pyproject.toml` to the V2 dependency set.
 
 ```
 uv run pytest           # 0 tests → exit 0 (harness boots)
-uv run wk --help        # argparse help renders, exit 0
+uv run wk --help        # typer+rich help renders, exit 0 (ADR-0010)
 ```
 
 **Done when**
@@ -151,7 +176,8 @@ reads/writes through it.
 **Validation gate**
 
 ```
-uv run pytest tests/test_store*.py        # all store tests pass
+uv run pytest whakoom_scraper/tests/test_store*.py   # all store tests pass
+# or, equivalently: uv run pytest -k store
 ```
 
 **Done when**
@@ -184,7 +210,8 @@ the substrate all stages share.
 **Validation gate**
 
 ```
-uv run pytest tests/test_http*.py         # all http tests pass
+uv run pytest whakoom_scraper/tests/test_http*.py    # all http tests pass
+# or, equivalently: uv run pytest -k http
 ```
 
 **Done when**
@@ -255,7 +282,8 @@ No I/O, no DB (V2 §5 layering rule).
 **Validation gate**
 
 ```
-uv run pytest tests/test_scrapers*.py      # all parser tests pass
+uv run pytest whakoom_scraper/tests/test_scrapers*.py  # all parser tests pass
+# or, equivalently: uv run pytest -k scrapers
 ```
 
 **Done when**
@@ -285,7 +313,8 @@ the live site, storing to the V2 DB.
 **Validation gate**
 
 ```
-uv run pytest tests/test_pipeline*.py && uv run wk lists && uv run wk list-detail --all
+uv run pytest whakoom_scraper/tests/test_pipeline*.py && uv run wk lists && uv run wk list-detail --all
+# or, equivalently: uv run pytest -k pipeline
 ```
 
 **Done when**
@@ -316,7 +345,8 @@ strictly gated and strictly minimal.
 **Validation gate**
 
 ```
-uv run pytest tests/test_resolve*.py && uv run wk resolve
+uv run pytest whakoom_scraper/tests/test_resolve*.py && uv run wk resolve
+# or, equivalently: uv run pytest -k resolve
 ```
 
 **Done when**
@@ -345,7 +375,8 @@ ediciones pages.
 **Validation gate**
 
 ```
-uv run pytest tests/test_series*.py && uv run wk series
+uv run pytest whakoom_scraper/tests/test_series*.py && uv run wk series
+# or, equivalently: uv run pytest -k series
 ```
 
 **Done when**

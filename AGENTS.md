@@ -11,7 +11,7 @@ material**: never wired in, never deleted — mine it for selectors/endpoint kno
 
 **Core stack:**
 
-* Python **3.13** (pinned in `.python-version`; `requires-python` stays `>=3.12`)
+* Python **3.13** (pinned in `.python-version`; `requires-python = ">=3.13"`, ADR-0011)
 * httpx + tenacity (HTTP, retries), parsel (HTML parsing)
 * SQLite (local persistence) behind a custom `store/` layer
 * DuckDB (read-only analytics/export via the SQLite extension)

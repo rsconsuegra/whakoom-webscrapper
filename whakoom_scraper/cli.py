@@ -16,6 +16,7 @@ from whakoom_scraper.config import load_settings
 from whakoom_scraper.pipeline.stage_list_detail import run_list_detail
 from whakoom_scraper.pipeline.stage_lists import run_lists
 from whakoom_scraper.pipeline.stage_resolve import run_resolve
+from whakoom_scraper.pipeline.stage_series import run_series
 
 app = typer.Typer(
     name="wk",
@@ -81,7 +82,7 @@ def series(
     limit: Annotated[int | None, typer.Option(help="Cap the number of series scraped.")] = None,
 ) -> None:
     """Stage 4: scrape series pages."""
-    _not_implemented("series", force=force, limit=limit)
+    raise typer.Exit(code=run_series(load_settings(), force=force, limit=limit))
 
 
 @app.command()

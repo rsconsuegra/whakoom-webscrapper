@@ -169,6 +169,31 @@ FROM series
 WHERE scrape_status = 'failed'
 ORDER BY id;
 
+-- name: get_all_series
+SELECT
+    id,
+    whakoom_series_id,
+    slug,
+    url,
+    name,
+    original_title,
+    publisher_id,
+    status,
+    format,
+    language,
+    volumes_count,
+    rating,
+    rating_count,
+    rating_distribution,
+    ownership_count,
+    synopsis,
+    scrape_status,
+    scraped_at,
+    created_at,
+    updated_at
+FROM series
+ORDER BY id;
+
 -- name: upsert_series
 INSERT INTO series (
     whakoom_series_id,

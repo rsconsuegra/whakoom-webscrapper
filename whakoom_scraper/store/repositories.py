@@ -477,6 +477,32 @@ def get_failed_series(db: Database) -> list[Series]:
     return [_series_from_row(row) for row in db.fetchall("series", "get_failed_series")]
 
 
+def get_all_series(db: Database) -> list[Series]:
+    """Fetch every series in id order, regardless of scrape status.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Every series row; used by the series stage's ``--force`` re-scrape.
+    """
+    return [_series_from_row(row) for row in db.fetchall("series", "get_all_series")]
+
+
+def get_series_row_id(db: Database, whakoom_series_id: int) -> int | None:
+    """Fetch a series' surrogate row id by its Whakoom id.
+
+    Args:
+        db: Database handle.
+        whakoom_series_id: Whakoom series id.
+
+    Returns:
+        The surrogate row id, or ``None`` if the series is absent.
+    """
+    row = db.fetchone("series", "get_series_id", (whakoom_series_id,))
+    return int(row["id"]) if row else None
+
+
 def upsert_series(db: Database, series: Series, publisher_id: int | None) -> int:
     """Insert or update a fully scraped series, marking it completed.
 

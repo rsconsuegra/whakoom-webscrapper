@@ -9,8 +9,6 @@ import pytest
 
 from whakoom_scraper.domain import (
     Author,
-    List,
-    ListItem,
     Observation,
     Publisher,
     Series,
@@ -20,29 +18,8 @@ from whakoom_scraper.domain import (
 from whakoom_scraper.store import repositories as repo
 from whakoom_scraper.store.db import Database
 from whakoom_scraper.store.repositories import RecordMissingError
-
-
-def _list(whakoom_list_id: int = 1, name: str = "Manga 2000") -> List:
-    return List(
-        whakoom_list_id=whakoom_list_id,
-        name=name,
-        url=f"https://www.whakoom.com/deirdre/lists/lista_{whakoom_list_id}",
-        description="Toda la colección del año 2000",
-        comic_count=120,
-        likes=45,
-    )
-
-
-def _item(list_id: int, position: int, slug: str = "abc12") -> ListItem:
-    return ListItem(
-        list_id=list_id,
-        position=position,
-        volume_slug=slug,
-        volume_url=f"https://www.whakoom.com/comics/{slug}/una_obra/{position}",
-        whakoom_publication_id=position,
-        volume_number=position,
-        publisher="Planeta Cómic",
-    )
+from whakoom_scraper.tests.factories import make_item as _item
+from whakoom_scraper.tests.factories import make_list as _list
 
 
 def _series(whakoom_series_id: int = 673392, slug: str = "el_gran_gaea-tima") -> Series:

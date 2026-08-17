@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from whakoom_scraper.scrapers.series_page import parse_series_page
-
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from whakoom_scraper.tests.conftest import load_fixture
 
 SERIES_ID = 673392
 SLUG = "rosen_blood"
@@ -15,7 +12,7 @@ URL = f"/ediciones/{SERIES_ID}/{SLUG}"
 
 def _load(name: str) -> str:
     """Read a fixture file as text."""
-    return (FIXTURES / name).read_text(encoding="utf-8")
+    return load_fixture(name)
 
 
 def test_parse_series_page_identity_and_name() -> None:

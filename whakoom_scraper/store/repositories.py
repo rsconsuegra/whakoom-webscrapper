@@ -602,7 +602,7 @@ def insert_observation(db: Database, observation: Observation) -> None:
             observation.run_id,
             observation.rating,
             observation.rating_count,
-            json.dumps(observation.rating_distribution) if observation.rating_distribution else None,
+            (json.dumps(observation.rating_distribution) if observation.rating_distribution else None),
             observation.ownership_count,
             observation.volumes_count,
             observation.status,
@@ -655,3 +655,230 @@ def close_run(
         "close_run",
         (status, items_processed, items_failed, notes, run_id),
     )
+
+
+def get_last_run_status(db: Database, stage: str) -> str | None:
+    """Fetch the status of the most recent run of a stage.
+
+    Args:
+        db: Database handle.
+        stage: Stage name (e.g. ``validate``).
+
+    Returns:
+        The run status, or ``None`` when the stage has never run.
+    """
+    row = db.fetchone("runs", "get_last_run", (stage,))
+    return str(row["status"]) if row else None
+
+
+def get_last_completed_run_id(db: Database, stage: str, exclude_id: int = 0) -> int | None:
+    """Fetch the id of the most recent completed run of a stage.
+
+    Args:
+        db: Database handle.
+        stage: Stage name.
+        exclude_id: Run id to exclude (the caller's own open run).
+
+    Returns:
+        The run id, or ``None`` when no completed run exists.
+    """
+    row = db.fetchone("runs", "get_last_completed_run_id", (stage, exclude_id))
+    return int(row["id"]) if row else None
+
+
+def abort_stale_runs(db: Database, exclude_id: int) -> int:
+    """Mark every stale ``running`` run as ``aborted``.
+
+    Interrupted stages leave ``running`` rows behind; validation closes them
+    so they stop polluting run history. The caller's own open run is excluded.
+
+    Args:
+        db: Database handle.
+        exclude_id: The current run's id, never aborted.
+
+    Returns:
+        The number of runs marked ``aborted``.
+    """
+    return int(db.execute("runs", "abort_stale_runs", (exclude_id,)).rowcount)
+
+
+def get_list_count_mismatches(db: Database) -> list[tuple[int, str, int, int]]:
+    """Find lists whose parsed item count differs from the advertised one.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Tuples of ``(whakoom_list_id, name, comic_count, parsed_count)`` for
+        every mismatching list with a non-null ``comic_count``.
+    """
+    return [
+        (int(row["whakoom_list_id"]), str(row["name"]), int(row["comic_count"]), int(row["parsed_count"]))
+        for row in db.fetchall("validation", "list_count_mismatches")
+    ]
+
+
+def count_lists_missing_comic_count(db: Database) -> int:
+    """Count lists whose advertised comic count is unknown.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Number of lists with a null ``comic_count``.
+    """
+    row = db.fetchone("validation", "count_lists_missing_comic_count")
+    return int(row["n"]) if row else 0
+
+
+def count_foreign_key_violations(db: Database) -> int:
+    """Count referential-integrity violations via ``PRAGMA foreign_key_check``.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Number of violating (table, rowid, parent) triples.
+    """
+    return len(db.fetchall("validation", "foreign_key_violations"))
+
+
+def get_duplicate_item_positions(db: Database) -> list[tuple[int, int]]:
+    """Find duplicate ``(list_id, position)`` natural keys.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Duplicated list/position pairs (schema should prevent any).
+    """
+    return [(int(row["list_id"]), int(row["position"])) for row in db.fetchall("validation", "duplicate_list_item_positions")]
+
+
+def get_duplicate_item_slugs(db: Database) -> list[tuple[int, str]]:
+    """Find duplicate ``(list_id, volume_slug)`` natural keys.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Duplicated list/slug pairs (schema should prevent any).
+    """
+    return [(int(row["list_id"]), str(row["volume_slug"])) for row in db.fetchall("validation", "duplicate_list_item_slugs")]
+
+
+def count_unresolved_items(db: Database) -> int:
+    """Count list items not yet linked to a series.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Number of items with a null ``series_id``.
+    """
+    row = db.fetchone("validation", "count_unresolved_items")
+    return int(row["n"]) if row else 0
+
+
+def count_series_bound_violations(db: Database) -> int:
+    """Count series rows violating rating/count bounds.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Number of violating rows (schema CHECKs should prevent any).
+    """
+    return len(db.fetchall("validation", "series_bound_violations"))
+
+
+def count_observation_bound_violations(db: Database) -> int:
+    """Count observation rows violating rating/count bounds.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Number of violating rows (schema CHECKs should prevent any).
+    """
+    return len(db.fetchall("validation", "observation_bound_violations"))
+
+
+def get_table_row_counts(db: Database) -> dict[str, int]:
+    """Snapshot the row count of every tracked table.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Mapping of table name to row count.
+    """
+    return {str(row["table_name"]): int(row["row_count"]) for row in db.fetchall("validation", "table_row_counts")}
+
+
+def get_latest_stage_runs(db: Database) -> list[tuple[str, int, int]]:
+    """Fetch the latest completed run's counters for every stage.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Tuples of ``(stage, items_processed, items_failed)``.
+    """
+    return [
+        (str(row["stage"]), int(row["items_processed"]), int(row["items_failed"]))
+        for row in db.fetchall("validation", "latest_completed_stage_runs")
+    ]
+
+
+def record_snapshots(db: Database, run_id: int, counts: dict[str, int]) -> None:
+    """Persist a validation snapshot of per-table row counts.
+
+    Args:
+        db: Database handle.
+        run_id: The validate run the snapshot belongs to.
+        counts: Mapping of table name to row count.
+    """
+    db.executemany(
+        "validation",
+        "insert_snapshot",
+        [(run_id, table_name, count) for table_name, count in sorted(counts.items())],
+    )
+
+
+def get_snapshots_for_run(db: Database, run_id: int) -> dict[str, int]:
+    """Load a run's validation snapshot.
+
+    Args:
+        db: Database handle.
+        run_id: The validate run the snapshot belongs to.
+
+    Returns:
+        Mapping of table name to row count.
+    """
+    rows = db.fetchall("validation", "get_snapshots_for_run", (run_id,))
+    return {str(row["table_name"]): int(row["row_count"]) for row in rows}
+
+
+def get_unclassified_lists(db: Database) -> list[tuple[int, str]]:
+    """Fetch lists that still need a ``list_type`` classification.
+
+    Args:
+        db: Database handle.
+
+    Returns:
+        Tuples of ``(row_id, name)`` in insertion order.
+    """
+    return [(int(row["id"]), str(row["name"])) for row in db.fetchall("lists", "get_unclassified_lists")]
+
+
+def set_list_classification(db: Database, list_row_id: int, list_type: str, canonical_name: str) -> None:
+    """Store a list's classification and canonical name (analyze enrichment).
+
+    Args:
+        db: Database handle.
+        list_row_id: Surrogate list row id.
+        list_type: One of ``year``, ``magazine``, ``event``, ``theme``.
+        canonical_name: Aggregation key with year/magazine decorations removed.
+    """
+    db.execute("lists", "set_list_classification", (list_type, canonical_name, list_row_id))

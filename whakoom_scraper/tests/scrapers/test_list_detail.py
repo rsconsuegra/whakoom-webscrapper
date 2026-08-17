@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from whakoom_scraper.scrapers.list_detail import parse_list_page, parse_series_page_json
-
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from whakoom_scraper.tests.conftest import load_fixture
 
 
 def _load_text(name: str) -> str:
     """Read a fixture file as text."""
-    return (FIXTURES / name).read_text(encoding="utf-8")
+    return load_fixture(name)
 
 
 def _load_json(name: str) -> dict[str, object]:

@@ -4,6 +4,6 @@
   "pythonVersion": "3.13",
   "typeCheckingMode": "standard",
   "reportMissingTypeStubs": "warning",
-  "include": ["whakoom_scraper", "whakoom_webscrapper"],
+  "include": ["whakoom_scraper", "legacy"],
   "exclude": [".venv", ".mypy_cache", ".ruff_cache", "databases", "docs", ".opencode", "data"]
 }

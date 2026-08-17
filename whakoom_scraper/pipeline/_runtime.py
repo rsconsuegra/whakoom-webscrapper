@@ -65,6 +65,46 @@ def owned_session_db(
         yield session, db
 
 
+@contextlib.contextmanager
+def owned_db(settings: Settings, db: Database | None) -> Generator[Database]:
+    """Yield a database, owning (and closing) one when not supplied.
+
+    Production callers pass ``None`` and this helper opens the configured
+    database and closes it on exit; tests inject a pre-opened instance so it
+    survives past the call.
+
+    Args:
+        settings: Runtime settings used to build the default.
+        db: Optional pre-opened database; opened and closed when ``None``.
+
+    Yields:
+        A non-``None`` database handle.
+    """
+    with contextlib.ExitStack() as stack:
+        store = db if db is not None else Database(settings.db_path)
+        if db is None:
+            stack.callback(store.close)
+        yield store
+
+
+def build_robots_policy(session: WhakoomSession, settings: Settings) -> RobotsPolicy:
+    """Build the robots policy shared by every stage pre-flight check.
+
+    Args:
+        session: Live Whakoom session used to fetch robots.txt.
+        settings: Runtime settings.
+
+    Returns:
+        The ``RobotsPolicy`` for the configured user agent.
+    """
+    return RobotsPolicy.from_session(
+        session,
+        base_url=BASE_URL,
+        user_agent=settings.user_agent,
+        allow_gated=settings.allow_gated_resolution,
+    )
+
+
 def lists_index_allowed(session: WhakoomSession, settings: Settings) -> bool:
     """Check whether robots.txt permits the profile lists path.
 
@@ -78,12 +118,7 @@ def lists_index_allowed(session: WhakoomSession, settings: Settings) -> bool:
     Returns:
         ``True`` if the ``/{profile}/lists/`` path may be requested.
     """
-    policy = RobotsPolicy.from_session(
-        session,
-        base_url=BASE_URL,
-        user_agent=settings.user_agent,
-        allow_gated=settings.allow_gated_resolution,
-    )
+    policy = build_robots_policy(session, settings)
     return policy.is_allowed(f"/{settings.profile}/lists/")
 
 
@@ -101,10 +136,5 @@ def gated_resolution_allowed(session: WhakoomSession, settings: Settings) -> boo
     Returns:
         ``True`` only when the gated path may be requested.
     """
-    policy = RobotsPolicy.from_session(
-        session,
-        base_url=BASE_URL,
-        user_agent=settings.user_agent,
-        allow_gated=settings.allow_gated_resolution,
-    )
+    policy = build_robots_policy(session, settings)
     return policy.is_allowed(GATED_PREFIX)

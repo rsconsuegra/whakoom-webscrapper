@@ -361,6 +361,27 @@ uv run pytest whakoom_scraper/tests/test_resolve*.py && uv run wk resolve
 
 ## Phase 6 — Stage 4 (series scraping)
 
+> **Status: IMPLEMENTED (2026-08-16).** All gates green: `uv run pytest` (146 passed,
+> incl. 9 new series-stage integration tests), `uv run ruff check .`, `uv run mypy .`,
+> `uv run bandit -c pyproject.toml -r whakoom_scraper/`, `uv run pre-commit
+> run --all-files` (pylint 10.00/10).
+>
+> **Delivered:** `pipeline/stage_series.py` (`wk series [--force] [--limit N]`),
+> `get_all_series` query + repository, CLI wiring, and the full test spec in
+> `whakoom_scraper/tests/pipeline/test_series.py` (happy path, per-series failure
+> semantics, `--force`/`--limit`, robots denial, empty-selection noop, save_raw).
+>
+> **Notes:**
+> - `--force` selects via `get_all_series` (pending + failed + completed); the default
+>   selection is pending-only — completed series are never re-scraped implicitly.
+> - The `analysis/` seed deliverable was deferred to Phase 7.
+> - The test suite was reorganized into grouped packages (`tests/http`, `tests/scrapers`,
+>   `tests/store`, `tests/pipeline`, plus root `test_config.py` / `test_cli.py` split out
+>   of the old `test_phase0_smoke.py`); scrapers tests now share `conftest.load_fixture`.
+> - `RobotsPolicy.from_session` construction deduplicated into
+>   `pipeline/_runtime.build_robots_policy` (pylint R0801).
+> - Live backfill in progress (first run interrupted; resume via `wk series`).
+
 **Objective:** the complete analytical dataset — current state + first observation history — from public
 ediciones pages.
 
@@ -370,12 +391,11 @@ ediciones pages.
   `/ediciones/{id}/{slug}`, parse, and in **one transaction**: upsert publisher → series → volumes →
   authors/junction → insert one `series_observations` row → set `completed`. Required-field failures mark
   `failed` and continue (never row-fatal for optional fields).
-- `analysis/` seeded: `views.sql` placeholder + `explore.ipynb`.
 
 **Validation gate**
 
 ```
-uv run pytest whakoom_scraper/tests/test_series*.py && uv run wk series
+uv run pytest whakoom_scraper/tests/pipeline/test_series.py && uv run wk series
 # or, equivalently: uv run pytest -k series
 ```
 
@@ -391,6 +411,44 @@ uv run pytest whakoom_scraper/tests/test_series*.py && uv run wk series
 ---
 
 ## Phase 7 — Validation gate & analytics (DuckDB)
+
+> **Status: IMPLEMENTED (2026-08-16).** All gates green: `uv run pytest` (175 passed),
+> `uv run ruff check .`, `uv run mypy .`, `uv run bandit -c pyproject.toml -r
+> whakoom_scraper/`, `uv run pre-commit run --all-files` (pylint 10.00/10).
+>
+> **Delivered:** `pipeline/validate.py` (`wk validate`, 8 checks, validation_snapshots
+> migration 002), `pipeline/export.py` (`wk analyze [--force]`), `pipeline/run_all.py`
+> (`wk run-all`), `analysis/classification.py` + `analysis/views.sql` (repo root,
+> 6 DuckDB views), `analysis/explore.ipynb` (3 starter queries, executed against real
+> data), 25 new tests (store/test_validation, pipeline/test_validate, test_analyze,
+> test_run_all, CLI dispatch).
+>
+> **Notes:**
+> - `wk validate` exit codes: 0 ok, 1 machinery error, 2 check failure. Stale
+>   'running' runs are aborted (warn) before checks run; row-delta baselines come
+>   from the previous successful validate's snapshot (first run warns, no baseline).
+> - `wk analyze` refuses (exit 2) unless the last validate run completed
+>   (`--force` overrides); enriches `lists.list_type`/`canonical_name`
+>   (year/magazine/event/theme) before building views; exports the 5 core tables
+>   to `data/exports/*.csv`; persists views in `data/whakoom.duckdb` (re-ATTACH
+>   SQLite as `wh` when reopening).
+> - **CLI exit-code bug fixed**: typer `standalone_mode=False` returns the exit
+>   code instead of raising; `main()` now propagates it (nonzero `wk` exits were
+>   silently swallowed to 0 before).
+> - **Live results**: validate exit 0 with all 8 checks PASS (after the 2nd
+>   observation batch from `wk series --force`: 2,366 observations, series/volumes/
+>   authors/publishers stable → idempotent). Notebook answers (a) top publishers
+>   by year, (b) score distribution (330 titles ≥ 4.5, 383 unrated), (c) Rosen
+>   Blood trend over 2 runs.
+> - **Year floor recalibrated (owner decision, 2026-08-16)**:
+>   `FLOOR_TITLES_BY_YEAR` lowered 1000 → 500 in `pipeline/export.py`. The
+>   complete dataset holds 600 year-list titles (8 year lists) — the original
+>   1,000 estimate assumed a larger collection. `wk analyze` now exits 0;
+>   `v_titles_by_magazine` = 568 ≥ 100 floor passes.
+> - View year extraction uses `TRY_CAST` inside a `list_type='year'`-filtered CTE:
+>   DuckDB may evaluate projections on rows the filter drops, and a hard CAST on
+>   non-year names crashes when view columns are materialized (COUNT(*) hides it
+>   via column pruning). Regression-tested in test_analyze.
 
 **Objective:** make the dataset trustworthy (hard gate) and turn it into queryable views + exports.
 
@@ -416,11 +474,50 @@ uv run wk validate && uv run wk analyze
 - `data/exports/` contains **lists, list_items, series, volumes, observations** CSVs.
 - The notebook answers on **real data**: (a) top publishers by year; (b) score distribution; (c) score /
   ownership trend of one series over ≥ 2 runs.
-- `v_titles_by_year` and `v_titles_by_magazine` return ≥ 1,000 and ≥ 100 rows respectively (sanity floor).
+- `v_titles_by_year` and `v_titles_by_magazine` return ≥ 500 and ≥ 100 rows respectively (sanity
+  floor; year floor recalibrated from 1,000 to 500 with owner approval, 2026-08-16).
 
 ---
 
 ## Phase 8 — Polish, docs & full run
+
+> **Status: COMPLETED (2026-08-16).** All gates green: `uv run pytest` (175 passed),
+> `uv run ruff check .`, `uv run mypy .`, `uv run bandit -c pyproject.toml -r
+> whakoom_scraper/`, `uv run pre-commit run --all-files` (pylint 10.00/10).
+>
+> **Delivered:**
+> - `README.md` fully rewritten for V2: pipeline table, config reference, cookie
+>   setup, ethics note (robots-allowed bulk + gated-resolution tradeoff + the
+>   "cataloging not sales" guardrail), measured run profile, site-drift caveat,
+>   data/outputs map, development workflow.
+> - **Legacy archived (owner-approved):** `git mv whakoom_webscrapper legacy/`
+>   (+ `scrapy.cfg`). Config references updated (pyproject mypy exclude, pyright
+>   include, pre-commit comments); isort/pyupgrade/ruff-check/ruff-format hooks
+>   scoped with `exclude: ^legacy/` after isort auto-modified 3 frozen files
+>   (reverted; same frozen-material rationale as the pylint/sqlfluff scope —
+>   not a rule disable).
+> - `data/*.duckdb` added to `.gitignore`; `.env.example` verified final.
+>
+> **Owner decisions (2026-08-16):**
+> - `run-all` keeps the series stage **pending-only**: a settled `run-all` is a
+>   pure data no-op; observation batches grow only via explicit `wk series
+>   --force` ("Done when" above amended accordingly).
+> - Legacy tree **moved** to `legacy/whakoom_webscrapper/` rather than deleted.
+>
+> **Full-run results (from empty DB):**
+> - `rm -f data/whakoom.db && uv run wk run-all` → **exit 0, 1h35m** (fresh DB:
+>   61 lists, 1,643 items, 0 unresolved, 1,182 series all completed, 3,936
+>   volumes, 1,182 observations). All 8 validate checks pass; analyze floors
+>   pass (568 magazine / 600 year titles); 5 CSVs exported.
+> - Second `run-all` → **exit 0, 4m24s**, 0 new rows, 0 constraint errors, 0 new
+>   observations (pending-only), row-deltas check now PASS. Idempotency proven.
+> - `data/whakoom.db.backup-20260816` preserves the pre-gate database carrying
+>   the 2-batch observation history (fresh DB starts history anew).
+> - Notebook re-executed on the fresh dataset (`analysis/explore.ipynb`).
+>
+> **Note:** the fresh DB holds 1,182 series vs the pre-gate 1,183 — the extra
+> row was an orphaned stub referenced by no list item; the rebuilt dataset is
+> tighter.
 
 **Objective:** make the project reproducible and documented; prove the whole pipeline from empty DB.
 
@@ -446,7 +543,9 @@ uv run wk run-all && uv run wk validate
 **Done when**
 
 - `run-all` (stages 1→5) completes end-to-end from an **empty** database with exit 0; second full run is a
-  no-op for data (0 new rows, 0 constraint errors) yet adds a new `series_observations` batch.
+  no-op for data (0 new rows, 0 constraint errors). It does **not** add a new `series_observations` batch:
+  the series stage runs pending-only inside `run-all` (owner decision, 2026-08-16), so observation history
+  grows only via explicit `wk series --force` runs.
 - All five quality gates pass on the full package.
 - README documents: the workflow, the cookie-file requirement, `WK_ALLOW_GATED_RESOLUTION=1` tradeoff,
   and the "cataloging not sales" guardrail.

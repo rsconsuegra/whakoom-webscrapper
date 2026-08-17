@@ -1,18 +1,12 @@
-"""Smoke tests for the Phase 0 skeleton plus config validation (H1) and the
-nonzero-exit stub behavior (I1).
-"""
+"""Config settings tests: defaults, env overrides, and H1 validation."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
 
-from whakoom_scraper.cli import app
 from whakoom_scraper.config import PROJECT_ROOT, Settings, load_settings
-
-runner = CliRunner()
 
 
 def test_settings_defaults() -> None:
@@ -34,20 +28,6 @@ def test_settings_from_env() -> None:
 def test_load_settings() -> None:
     """load_settings returns a Settings instance without raising."""
     assert isinstance(load_settings(), Settings)
-
-
-def test_cli_help_exits_zero() -> None:
-    """The CLI help renders and exits 0."""
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "Usage" in result.output
-
-
-def test_cli_series_stub_exits_nonzero() -> None:
-    """An unimplemented stage exits nonzero so it cannot mask as success (I1)."""
-    result = runner.invoke(app, ["series"])
-    assert result.exit_code == 1
-    assert "not implemented" in result.output
 
 
 # --- H1: config validation -------------------------------------------------

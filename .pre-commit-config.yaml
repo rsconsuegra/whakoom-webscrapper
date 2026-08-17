@@ -21,30 +21,36 @@ repos:
     hooks:
       - id: isort
         language: system
+        # Auto-fix hooks skip the archived legacy tree: frozen reference material
+        # must not be auto-modified (same rationale as the pylint/sqlfluff scope).
+        exclude: ^legacy/
         args: [ "--profile", "black" ]
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.21.2
     hooks:
       - id: pyupgrade
         language: system
+        exclude: ^legacy/
         args: [--py312-plus]
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.1
     hooks:
       - id: ruff-check
         language: system
+        exclude: ^legacy/
         types_or: [ python, pyi, jupyter ]
         args: [ --fix ]
       - id: ruff-format
         language: system
+        exclude: ^legacy/
         types_or: [ python, pyi, jupyter ]
         args:
           - --line-length=128
   - repo: https://github.com/pycqa/pylint
     rev: v4.0.6
     hooks:
-      # Scoped to the V2 package only: legacy whakoom_webscrapper/ cannot import its
-      # removed deps (scrapy/selenium) and is frozen reference material.
+      # Scoped to the V2 package only: the archived legacy tree (legacy/)
+      # cannot import its removed deps (scrapy/selenium).
       - id: pylint
         language: system
         files: ^whakoom_scraper/
@@ -65,8 +71,8 @@ repos:
   - repo: https://github.com/sqlfluff/sqlfluff
     rev: 4.2.2
     hooks:
-      # Scoped to the V2 package only: the legacy whakoom_webscrapper/ SQL is frozen
-      # reference material and must not be auto-modified.
+      # Scoped to the V2 package only: the archived legacy SQL (legacy/) is
+      # frozen reference material and must not be auto-modified.
       - id: sqlfluff-lint
         language: system
         args: ["--dialect", "sqlite"]

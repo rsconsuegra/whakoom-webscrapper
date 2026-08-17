@@ -18,12 +18,14 @@ from __future__ import annotations
 import logging
 
 from whakoom_scraper.config import Settings
-from whakoom_scraper.constants import BASE_URL
 from whakoom_scraper.domain import Observation, Series
 from whakoom_scraper.http.archive import save_raw
-from whakoom_scraper.http.policy import RobotsPolicy
 from whakoom_scraper.http.session import WhakoomSession
-from whakoom_scraper.pipeline._runtime import STAGE_ERRORS, owned_session_db
+from whakoom_scraper.pipeline._runtime import (
+    STAGE_ERRORS,
+    build_robots_policy,
+    owned_session_db,
+)
 from whakoom_scraper.scrapers.series_page import parse_series_page
 from whakoom_scraper.store.db import Database
 from whakoom_scraper.store.repositories import (
@@ -216,10 +218,5 @@ def _ediciones_allowed(session: WhakoomSession, settings: Settings) -> bool:
     Returns:
         ``True`` if the series path may be requested.
     """
-    policy = RobotsPolicy.from_session(
-        session,
-        base_url=BASE_URL,
-        user_agent=settings.user_agent,
-        allow_gated=settings.allow_gated_resolution,
-    )
+    policy = build_robots_policy(session, settings)
     return policy.is_allowed("/ediciones/")

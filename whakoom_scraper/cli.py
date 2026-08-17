@@ -1,7 +1,8 @@
 """Command-line entry point for the Whakoom V2 scraper.
 
-Defines the ``wk`` console script. Each subcommand maps to a pipeline stage;
-stages are implemented in later phases and are stubbed here.
+Defines the ``wk`` console script. Each subcommand maps to a pipeline stage
+implemented in :mod:`whakoom_scraper.pipeline` (``run-all`` orchestrates the
+full sequence).
 """
 
 from __future__ import annotations
@@ -13,10 +14,13 @@ from typing import Annotated
 import typer
 
 from whakoom_scraper.config import load_settings
+from whakoom_scraper.pipeline.export import run_analyze
+from whakoom_scraper.pipeline.run_all import run_all as run_all_pipeline
 from whakoom_scraper.pipeline.stage_list_detail import run_list_detail
 from whakoom_scraper.pipeline.stage_lists import run_lists
 from whakoom_scraper.pipeline.stage_resolve import run_resolve
 from whakoom_scraper.pipeline.stage_series import run_series
+from whakoom_scraper.pipeline.validate import run_validate
 
 app = typer.Typer(
     name="wk",
@@ -30,25 +34,6 @@ app = typer.Typer(
 def _bootstrap() -> None:
     """Load settings once before any subcommand runs."""
     load_settings()
-
-
-def _not_implemented(command: str, **flags: object) -> None:
-    """Report that a stage is not yet implemented, echoing any set flags.
-
-    Exits nonzero so a stub is never mistaken for a completed stage (I1).
-
-    Args:
-        command: The name of the requested stage.
-        **flags: Option values passed to the stage; truthy ones are echoed so the
-            caller can confirm the CLI parsed them correctly.
-
-    Raises:
-        typer.Exit: Always, with exit code ``1``.
-    """
-    parts = [f"[{command}] stage not implemented yet (Phase 0 skeleton)"]
-    parts += [f"{name}={value}" for name, value in flags.items() if value]
-    typer.echo(" ".join(parts))
-    raise typer.Exit(code=1)
 
 
 @app.command()
@@ -88,7 +73,7 @@ def series(
 @app.command()
 def validate() -> None:
     """Stage 5: run the read-only validation gate."""
-    _not_implemented("validate")
+    raise typer.Exit(code=run_validate(load_settings()))
 
 
 @app.command()
@@ -96,13 +81,13 @@ def analyze(
     force: Annotated[bool, typer.Option(help="Skip the validation gate.")] = False,
 ) -> None:
     """Stage 6: build DuckDB views and exports."""
-    _not_implemented("analyze", force=force)
+    raise typer.Exit(code=run_analyze(load_settings(), force=force))
 
 
 @app.command("run-all")
-def run_all() -> None:
-    """Run stages 1-5 in order, stop before analyze on failure."""
-    _not_implemented("run-all")
+def run_all_command() -> None:
+    """Run stages 1-6 in order, stop before analyze on failure."""
+    raise typer.Exit(code=run_all_pipeline(load_settings()))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -112,16 +97,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: Command-line arguments; defaults to ``sys.argv[1:]``.
 
     Returns:
-        Process exit code: ``0`` success, ``1`` stage failure.
+        Process exit code: the invoked stage's exit code, or 0 on success.
     """
     args = list(argv) if argv is not None else None
     try:
-        app(args=args, standalone_mode=False)
-    except typer.Exit as exc:
-        return exc.exit_code
+        code = app(args=args, standalone_mode=False)
     except SystemExit as exc:  # pragma: no cover - Typer help/usage edge case
         return int(exc.code) if isinstance(exc.code, int) else 0
-    return 0
+    return code if isinstance(code, int) else 0
 
 
 if __name__ == "__main__":

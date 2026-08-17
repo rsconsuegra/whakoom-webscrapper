@@ -6,8 +6,9 @@ This is a **Python 3.13 web scraping project** that extracts manga collection da
 Whakoom user profiles through a plain-Python, sync-first httpx pipeline. It is a
 hobby project with maintainability best practices: layering, determinism, and no slope.
 
-The legacy `whakoom_webscrapper/` package (Scrapy + Selenium) is **frozen reference
-material**: never wired in, never deleted — mine it for selectors/endpoint knowledge only.
+The legacy Scrapy + Selenium package is **archived reference material** at
+`legacy/whakoom_webscrapper/` (moved out of the active tree in Phase 8, 2026-08-16, with
+owner approval): never wired in, never deleted — mine it for selectors/endpoint knowledge only.
 
 **Core stack:**
 

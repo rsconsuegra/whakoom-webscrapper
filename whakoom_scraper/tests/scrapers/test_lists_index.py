@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from whakoom_scraper.scrapers.lists_index import parse_lists_index
-
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from whakoom_scraper.tests.conftest import load_fixture
 
 
 def _load(name: str) -> str:
     """Read a fixture file as text."""
-    return (FIXTURES / name).read_text(encoding="utf-8")
+    return load_fixture(name)
 
 
 def test_parse_lists_index_returns_one_list_per_card() -> None:

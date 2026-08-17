@@ -131,3 +131,19 @@ SET
     scrape_status = 'pending',
     scraped_at = NULL,
     updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now');
+
+-- name: get_unclassified_lists
+SELECT
+    id,
+    name
+FROM lists
+WHERE list_type IS NULL
+ORDER BY id;
+
+-- name: set_list_classification
+UPDATE lists
+SET
+    list_type = ?,
+    canonical_name = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+WHERE id = ?;

@@ -6,53 +6,78 @@ repos:
       - id: trailing-whitespace
       - id: check-added-large-files
       - id: detect-private-key
+  # These hooks use `language: system` so they run the exact tools installed in the
+  # uv venv (single source of truth = pyproject.toml + uv.lock), avoiding per-hook
+  # isolated envs and manual dependency mirroring.
   - repo: https://github.com/PyCQA/flake8
     rev: 7.3.0
     hooks:
       - id: flake8
+        language: system
         args:
           - "--max-line-length=128"
   - repo: https://github.com/pycqa/isort
-    rev: 7.0.0
+    rev: 9.0.0b1
     hooks:
       - id: isort
+        language: system
+        # Auto-fix hooks skip the archived legacy tree: frozen reference material
+        # must not be auto-modified (same rationale as the pylint/sqlfluff scope).
+        exclude: ^legacy/
         args: [ "--profile", "black" ]
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.21.2
     hooks:
       - id: pyupgrade
+        language: system
+        exclude: ^legacy/
         args: [--py312-plus]
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.13
+    rev: v0.16.1
     hooks:
       - id: ruff-check
+        language: system
+        exclude: ^legacy/
         types_or: [ python, pyi, jupyter ]
         args: [ --fix ]
       - id: ruff-format
+        language: system
+        exclude: ^legacy/
         types_or: [ python, pyi, jupyter ]
         args:
           - --line-length=128
   - repo: https://github.com/pycqa/pylint
-    rev: v4.0.4
+    rev: v4.0.6
     hooks:
+      # Scoped to the V2 package only: the archived legacy tree (legacy/)
+      # cannot import its removed deps (scrapy/selenium).
       - id: pylint
         language: system
+        files: ^whakoom_scraper/
         args:
           - --max-line-length=128
         verbose: true
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.19.1
+    rev: v2.3.0
     hooks:
       - id: mypy
+        language: system
         args: [--disallow-untyped-defs, --disallow-incomplete-defs, --disallow-untyped-calls,--ignore-missing-imports]
   - repo: https://github.com/pycqa/pydocstyle
     rev: 6.3.0
     hooks:
       - id: pydocstyle
+        language: system
   - repo: https://github.com/sqlfluff/sqlfluff
-    rev: 4.0.0
+    rev: 4.2.2
     hooks:
+      # Scoped to the V2 package only: the archived legacy SQL (legacy/) is
+      # frozen reference material and must not be auto-modified.
       - id: sqlfluff-lint
+        language: system
         args: ["--dialect", "sqlite"]
+        files: ^whakoom_scraper/
       - id: sqlfluff-fix
+        language: system
         args: ["--dialect", "sqlite"]
+        files: ^whakoom_scraper/

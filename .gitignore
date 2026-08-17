@@ -56,3 +56,21 @@ databases
 venv
 .mypy_cache
 .ruff_cache
+.zcode
+plans
+.opencode
+.agents
+
+# V2 runtime data
+.env
+*_cookies.txt
+*.cookies.txt
+data/raw/
+data/exports/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db.backup-*
+data/*.duckdb
+data/*.csv
+*.egg-info
